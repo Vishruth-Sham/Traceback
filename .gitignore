@@ -1,0 +1,12 @@
+.DS_Store
+*.swp
+*.swo
+
+# Local credentials and runtime data
+.env
+.env.*
+!.env.example
+.venv/
+node_modules/
+__pycache__/
+.next/
