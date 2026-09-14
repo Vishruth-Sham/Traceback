@@ -6,7 +6,23 @@
 .env
 .env.*
 !.env.example
+.mcp.json
 .venv/
 node_modules/
 __pycache__/
 .next/
+.local/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+*.pyc
+# Backups, recordings, and model weights belong outside source control.
+*.dump
+*.backup
+*.gguf
+*.ggml
+*.wav
+*.m4a
+*.mp3

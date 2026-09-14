@@ -1,8 +1,10 @@
 # Traceback — First Local UI Plan
 
-Date: 2026-09-12  
-Status: Plan only. Existing Claude-generated HTML is a design reference, not the implemented application.  
+Date: 2026-09-12 (Tasks free-text add updated 2026-09-14)
+Status: Largely implemented in `frontend/`; see [README.md](../README.md) and [backend-api.md](backend-api.md) for what actually exists today. This document remains the broader behavioral spec; sections below note where implementation matches or has not yet reached the plan. Existing Claude-generated HTML remains a design reference, not the implemented application.
 Backend contract: [Local backend plan](backend-plan.md)
+
+The desktop UI now includes `/notes/quick-add`: compose and persist the exact note, review a local-Qwen placement proposal, or search/create/select a canonical destination manually before atomic save. `/notes/new` remains the model-free path. Current labels use Other and never Today.
 
 Design references: [Modern minimal UI export](../initial%20UI%20views/Modern%20minimal%20UI%20design/Traceback%20Main%20Page%20%28standalone%29.html) and [earlier standalone mockups](../initial%20UI%20views/Traceback%20Main%20Page%20%28standalone%29.html). The modern export was discovered during planning; inspect it before implementing visual details. This plan defines behavior and does not claim a visual review of that newer export.
 
@@ -63,13 +65,15 @@ Keep one list with Open and Completed filters. Do not add Today, a planned date,
 
 Each row: real checkbox, title, quiet optional category/project label, and due date/time if present. Open tasks sort by due date: overdue, upcoming, then undated. Make overdue deadlines legible with text as well as color. Completed sorts by completion time, newest first.
 
-An inline “Add a task…” input requires only a title. Optional due date and destination can be added immediately or later. Undesignated tasks live in Inbox for classification but also appear in Tasks; this is one object in two queries, not a duplicate.
+An inline “Add a task…” input accepts free-form natural language, not only a pre-structured title. For example, “Email Sarah Friday afternoon about the apartment move” is saved immediately as the original task-entry capture, then the local LLM parses it into a structured task proposal: title, optional deadline/timezone, category, project/folder association, and notes. The validated backend stores the resulting canonical task and preserves the original text as provenance. The user can review and edit every parsed field; ambiguous or failed parsing must leave the saved input available for manual task creation rather than losing it. Undesignated tasks live in Inbox for classification but also appear in Tasks; this is one object in two queries, not a duplicate.
+
+Implemented (2026-09-14) as `frontend/src/components/TaskQuickAdd.tsx` on the Tasks page: submitting calls `POST /captures` with the exact typed text (`source_type: "typed"`), clears the input immediately, and shows an inline card for that capture polling `GET /captures/{id}` (roughly every 1.5s) until its `processing.state` leaves `pending`/`processing`. A background processor (`processor/runner.py`, run separately — see [local-models.md](local-models.md) — not invoked from the browser) claims the capture, sends the text plus available categories/projects/folders to local Ollama `qwen3.5:4b`, and submits one atomic interpretation; project/folder placement uses the same canonical IDs and containment semantics as manual `/move`. On `resolved`, the card disappears, the parent task list is revalidated (the new task appears through the normal `GET /tasks` list, already reflecting its parsed title/deadline/placement — reviewing/editing it uses the existing task detail panel, not a separate confirmation step), and a toast confirms. On `failed`, the card stays with the original text, the failure reason, a Retry button (`POST /captures/{id}/retry`), and an "add manually" link to `/tasks/new?raw=...&captureId=...&captureVersion=...&captureGeneration=...`, which applies a direct structured `"create"` interpretation operation against that same capture — one atomic write, no duplicate item, capture still marked resolved and fencing any later stale automated attempt. `/tasks/new` without those query parameters remains the plain manual-structured-add path (`POST /items` directly, category only, no fabricated capture), per the "user must retain a straightforward manual structured-add path" requirement.
 
 Click a row to open a right-side detail panel with title, notes, optional due date/time, category/project, source/history access, complete/reopen, and archive. Show the due field consistently with the API's single-deadline semantics. Selecting a project supplies project context and category; extra associations remain explicit.
 
 Completion updates the same item everywhere. If using optimistic UI, restore the previous state and show a retryable error on failure. A brief Undo can reopen the task through the API. Do not present success before a mutation is acknowledged unless its pending state is clear.
 
-Acceptance: add an undated task, add a dated task, change deadline, complete/reopen, and see matching state in the project page. Verify task ordering, refresh persistence, and failed-write recovery.
+Acceptance: add an undated task, add a dated task using free text, verify locally parsed title/deadline/destination and preserved original input, correct a parsed field manually, change deadline, complete/reopen, and see matching state in the project page. Verify task ordering, refresh persistence, failed-parse recovery, and that stale parsing cannot overwrite a manual edit.
 
 ## Capture and processing feedback
 

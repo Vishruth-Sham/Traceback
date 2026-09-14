@@ -1,7 +1,7 @@
 # Traceback — Current Implementation Plan
 
 Updated: 2026-09-12  
-Status: Planning documents and initial UI mockups exist. Backend implementation has not started.
+Status: Core schema/REST, capture/provenance storage, nested folders, bounded local Whisper/Qwen processing, local stdio MCP, and the first desktop UI are implemented (2026-09-14). Tasks include capture-first free-text quick add with a task-only processing profile. See [implemented API](backend-api.md), [MCP adapter](mcp-adapter.md), [local development](local-development.md), and [local model validation](local-models.md).
 
 ## Current specifications
 
@@ -28,7 +28,7 @@ These plans supersede earlier Supabase-first, Today-view, planned-date, and mobi
 
 Create/read/edit tasks, notes and projects through a local REST API; preserve original captures and provenance; access the same data through local MCP clients; wire the desktop UI to those operations. Include date ordering, Inbox routing, archive/restore, and failure recovery.
 
-Use local Whisper (proposed whisper.cpp small) and Qwen3.5-4B (proposed Ollama quantized model) for in-app capture processing, with a bounded agent runner using the shared MCP/API operations. Validate on the base M5 MacBook Air before choosing final settings. Codex/Claude Code remain optional external clients. Build manual CRUD first, then connect the local processor; richer tracking and individual Skills follow in subsequent increments.
+Use local whisper.cpp with Whisper small and Ollama `qwen3.5:4b` Q4_K_M for in-app capture processing, with a bounded runner using shared REST business rules. The initial runtime settings were smoke-tested on the base M5 MacBook Air; representative personal-content quality still needs later evaluation. Codex/Claude Code are optional external clients through the implemented local MCP adapter. Richer tracking and individual Skills follow in subsequent increments.
 
 ## Personal memory phase after the foundation
 
@@ -50,7 +50,9 @@ Retain portable PostgreSQL migrations and stable IDs, isolate asset storage, the
 - [x] Record personal-use and Tasks-only decisions.
 - [x] Draft local backend data model and REST/MCP contracts.
 - [x] Draft desktop UI plan.
-- [ ] Implement schema and local REST backend.
-- [ ] Implement captures, provenance and local MCP adapter.
-- [ ] Verify both local MCP clients against the shared backend.
-- [ ] Connect and verify the UI.
+- [x] Implement core schema and local REST backend for notes, tasks, and projects.
+- [x] Implement captures, provenance, attachments, and durable processing state.
+- [x] Implement and smoke-test the bounded local Whisper/Qwen processor.
+- [x] Implement the local MCP adapter, with unit, stdio-protocol, and real-HTTP/PostgreSQL acceptance tests.
+- [ ] Configure and verify both local MCP clients (Codex, Claude Code) against a developer's own installation; project-local example configs exist under `docs/examples/` but have not been wired into either client as part of this change.
+- [x] Connect and verify the UI for the first useful slice (navigation, Tasks, Inbox classification, categories, Projects/membership, typed/audio capture, archive/restore). See [design-qa.md](../design-qa.md).

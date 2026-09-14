@@ -1,7 +1,7 @@
 # Traceback — First Local Backend Plan
 
 Date: 2026-09-12  
-Status: Planning specification; no backend, database, or client configuration has been created.
+Status: Core schema/REST plus capture, attachment, provenance, manual interpretation, durable processing state, the bounded local processor, a local stdio MCP adapter, and filesystem-style nested folders are implemented (2026-09-14), with PostgreSQL-backed tests. This document remains the broader specification; [backend-api.md](backend-api.md) records the implemented REST subset, [mcp-adapter.md](mcp-adapter.md) records the implemented MCP tool catalog, [folder-hierarchy-backend-spec.md](folder-hierarchy-backend-spec.md) records the folder design, and [local-development.md](local-development.md) records startup.
 
 This document is the current backend plan. Latest user decisions take precedence over the original handoffs and earlier UI mockups. Detailed schema and API choices below are proposals for implementation, not claims that they already exist.
 
@@ -9,7 +9,7 @@ This document is the current backend plan. Latest user decisions take precedence
 
 - One user/admin, on their PC. Local first; hosted deployment comes later.
 - Local PostgreSQL, local attachment storage, a REST API, and local MCP access. Supabase is a later hosting option, not a first-version dependency.
-- Capture processing will use local Whisper plus Qwen3.5-4B on the user's base M5 MacBook Air. Runtime defaults below are proposed pending on-device validation; no models have been installed or benchmarked.
+- Capture processing uses local whisper.cpp with Whisper small plus Ollama `qwen3.5:4b` Q4_K_M on the user's base M5 MacBook Air. These runtimes were installed and smoke-tested on-device; representative personal-content quality remains unbenchmarked. See `docs/local-models.md`.
 - One canonical item ID across category/project pages, Tasks, REST, and MCP.
 - Manual control is mandatory for every implemented content type and its user-editable fields. REST must support direct creation, editing, organization, relationships, completion, and archive/deletion without requiring an AI interpretation or MCP client.
 - Tasks is the only task view. No Today page, Today endpoint, or planned-date field.
@@ -92,13 +92,15 @@ Manual operations are a release requirement for each supported type. When a late
 
 Start executable CRUD with `note`, `task`, `project`, `entity`, and `reference`. A book is an entity with `entity_type=book`; project stays an explicit item type. Note/task/project behavior is the first acceptance slice, not a requirement to finish every category-specific feature.
 
+`folder` is now implemented alongside these as a general-purpose, filesystem-style container: structurally the same mechanism as `project` (an item other items can be `part_of`), generalized to unlimited nesting depth and any category rather than one fixed category. It exists so every category-organized section (not just Projects) can hold an arbitrary folder tree, matching the Learning-index mockup's filesystem view. See [folder-hierarchy-backend-spec.md](folder-hierarchy-backend-spec.md).
+
 Use versioned, validated attributes for entity details such as author, genre, and reading status. Define fields for recipes, food entries, goals, and list entries before implementing those features. Do not silently treat a food log or recipe as an unstructured note and claim tracking is complete. Checkable shopping entries can start as tasks associated with a list/entity; a reusable list UI is later work.
 
 ### Invariants
 
 - `placement_state=inbox` implies `category_id` is null; `classified` implies a valid category.
 - Moving to a project sets the category to Projects and adds its `part_of` relation in one operation. Additional cross-category associations use explicit links rather than silent category changes.
-- Project membership through `part_of` targets a project for the first version. Do not introduce arbitrary recursive folder containment yet.
+- Filesystem containment uses `part_of` with exactly one outgoing parent per item. Its target is a project or folder; folders can nest recursively. Moving replaces the old containment parent while preserving unrelated associations.
 - `task_details` exists exactly for task items. Task completion requires `completed_at`; reopening clears it. Type changes are not allowed through generic PATCH initially.
 - Archived is independent of placement and completion. Archiving a completed task preserves completion; restoring it does not reopen it.
 - Writes, task details, provenance, revisions, and relationship changes commit atomically through the shared service layer.
@@ -110,6 +112,8 @@ Use versioned, validated attributes for entity details such as author, genre, an
 
 There is one conceptual deadline, not separate planning and due dates. Preserve whether the user gave a date only or an exact time: `due_date` plus optional `due_time` and timezone. An absent time does not mean midnight.
 
+Task addition supports a free-text entry path. Persist the submitted text first as an immutable source capture, then let the local Qwen runner produce a validated structured task interpretation containing a title and optional notes, deadline/timezone, category, and project relationship. Apply that interpretation through the same atomic, versioned service operation used by other captures so the task has one canonical ID and retains source provenance. Parsing failure or uncertainty must keep the capture visible for retry or manual resolution. Manual edits always win: a delayed or stale interpretation must conflict rather than overwrite fields the user changed.
+
 Resolve relative dates against the capture timestamp and user timezone, not the time a delayed worker eventually processes it. Return the normalized deadline to the caller. A date-only task becomes overdue after that local calendar day ends; a timed task after its deadline.
 
 Sort open tasks by due date ascending with null dates last; on the same day timed tasks precede date-only tasks. Use creation time and ID as stable tie-breakers. Overdue is derived, not a separately stored status. Completion never deletes a task.
@@ -117,7 +121,7 @@ Sort open tasks by due date ascending with null dates last; on the same day time
 ### Capture and Inbox behavior
 
 1. Persist the raw capture and a durable pending processing row before returning success.
-2. A local worker transcribes voice with Whisper, then sends the transcript (or typed text directly) to Qwen3.5-4B. Its agent runner calls controlled MCP tools to search and apply an interpretation. Codex/Claude Code remain alternative clients, not prerequisites for capture processing. Manual CRUD works without any model running.
+2. A local worker transcribes voice with Whisper, then sends the transcript (or typed text directly) to Qwen3.5-4B. The current bounded worker reads context and applies validated interpretations through authenticated loopback REST; it has no SQL access. Codex/Claude Code use the separate MCP-over-REST adapter and are not prerequisites for capture processing. Manual CRUD works without any model running.
 3. An interpretation is one atomic batch: create/update items, attach sources, record revisions, and mark processing resolved. Repeated calls with the same idempotency key return the same result. Distinct reprocessing requires a new generation and explicit intent.
 4. If classification is uncertain, create a source-linked Inbox item. If extraction itself is pending or fails, show the capture's processing row in Inbox with its state.
 5. Avoid duplicate Inbox cards: processing captures are listed only while unresolved; once interpreted, list only unclassified resulting items.
@@ -187,7 +191,7 @@ Use `/api/v1` for REST. API and MCP validation, errors, and business rules are s
 | Create item | `POST /items` | `create_item` |
 | Edit item | `PATCH /items/{id}` | `update_item` |
 | Append note content | `POST /items/{id}/append` | `append_to_item` |
-| Move to category/project | `POST /items/{id}/move` | `move_item` |
+| Move to category/project/folder | `POST /items/{id}/move` | `move_item` |
 | Add/remove association | `POST /relations`, `DELETE /relations/{id}` | `link_items`, `unlink_items` |
 | Tasks | `GET /tasks?status=open` with optional category/project filters | `list_tasks` |
 | Complete/reopen | `POST /tasks/{id}/complete`, `POST /tasks/{id}/reopen` | `complete_task`, `reopen_task` |
@@ -233,14 +237,14 @@ Transport metadata must distinguish reads, reversible mutations, and destructive
 6. A repeated request does not duplicate work; a stale edit conflicts.
 7. Archive hides `t1`; restore preserves its completed state. Confirmed permanent deletion from Archive removes the item without deleting unrelated project content or the shared capture.
 
-Local stdio support is documented by [OpenAI for Codex](https://developers.openai.com/codex/mcp/) and [Anthropic for Claude Code](https://code.claude.com/docs/en/mcp#option-3-add-a-local-stdio-server). Actual tool discovery and calls in both installed clients remain implementation acceptance checks; no client configurations have been changed during planning.
+Local stdio support is documented by [OpenAI for Codex](https://developers.openai.com/codex/mcp/) and [Anthropic for Claude Code](https://code.claude.com/docs/en/mcp#option-3-add-a-local-stdio-server). The `traceback_mcp` adapter (see [mcp-adapter.md](mcp-adapter.md)) implements this contract's practical tool subset and has automated stdio-protocol and real-HTTP/PostgreSQL acceptance coverage; project-local example configs for both clients exist under `docs/examples/`, but neither has been wired into an actual developer's Codex or Claude Code installation as part of this change — no global client configuration was modified.
 
 ## Build sequence and completion criteria
 
 1. **Definitions/schema:** finalize core constraints, create migrations and fixed category seeds. Verify fresh initialization and invariant failures using real PostgreSQL.
 2. **Local persistence and REST:** implement item/task/project CRUD, dates, relations, archive/restore, conflict handling, and backup/restore. Verify shared IDs, ordering, completed filtering, and non-cascading project actions.
 3. **Capture and provenance:** add raw capture/media storage, atomic interpretation, revisions/undo, Inbox and manual routing. Test failed uploads, retries, conflicts, and durable pending state across restarts.
-4. **Local MCP:** implement adapters and configure both clients during implementation. Run the acceptance flow above across REST and MCP; no separate state per client.
+4. **Local MCP:** implement adapters and configure both clients during implementation. Run the acceptance flow above across REST and MCP; no separate state per client. The adapter is implemented against real HTTP/PostgreSQL (see [mcp-adapter.md](mcp-adapter.md)); actually configuring a developer's own Codex/Claude Code installation with the project-local example configs remains a manual, per-developer step.
 5. **Lifecycle cleanup and deletion:** implement Inbox aging after choosing its threshold, explicit permanent deletion, source-use checks, and reference-aware asset cleanup. Verify races with manual routing and restore.
 6. **Connect UI:** wire Tasks, category/project pages, Inbox, Archive, and capture states. Replace mock autosaved/scheduled claims with actual response states.
 

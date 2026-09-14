@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  --paper: #eae3d1;
+  --paper-soft: #e2d9c2;
+  --paper-strong: #dcd2b8;
+  --ink: #221e16;
+  --ink-muted: #8a7f61;
+  --ink-faint: #a89d7d;
+  --hairline: #d3c8a9;
+  --accent-navy: #2f3e68;
+  --accent-navy-soft: #eee9db;
+  --accent-gold: #c1962f;
+  --danger: #9a3a26;
+  --danger-soft: #e9d9cd;
+  --success: #3f5a3c;
+  --success-soft: #dee3d0;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-soft: var(--paper-soft);
+  --color-paper-strong: var(--paper-strong);
+  --color-ink: var(--ink);
+  --color-ink-muted: var(--ink-muted);
+  --color-ink-faint: var(--ink-faint);
+  --color-hairline: var(--hairline);
+  --color-accent-navy: var(--accent-navy);
+  --color-accent-navy-soft: var(--accent-navy-soft);
+  --color-accent-gold: var(--accent-gold);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --font-serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --font-mono: "SFMono-Regular", Menlo, Monaco, Consolas, monospace;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-mono);
+}
+
+::selection {
+  background: var(--accent-navy);
+  color: var(--paper);
+}
+
+input,
+textarea,
+select,
+button {
+  font-family: inherit;
+}
