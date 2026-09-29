@@ -58,7 +58,6 @@ function InboxPageInner() {
         title="Inbox"
         description="Confirm a suggestion, pick another folder, or start a note."
       />
-
       {isLoading && <LoadingState label="Loading Inbox…" />}
       {error && <ErrorState message="Could not load Inbox." onRetry={() => mutate()} />}
       {isEmpty && <EmptyState title="Nothing awaiting attention." />}

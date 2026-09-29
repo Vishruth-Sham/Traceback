@@ -42,6 +42,12 @@ class ProcessorSettings(BaseSettings):
     ollama_retry_attempts: int = Field(default=2, ge=1, le=5)
     ollama_think: bool = False
 
+    # Voice commands: normalization + strict slot extraction (local only; no cloud fallback)
+    ffmpeg_binary: Path = Field(default_factory=lambda: Path(shutil.which("ffmpeg") or "ffmpeg"))
+    ffmpeg_timeout_s: float = Field(default=30.0, gt=0)
+    voice_max_audio_seconds: float = Field(default=65.0, gt=0, le=600)
+    voice_min_audio_seconds: float = Field(default=0.7, ge=0)
+
     max_proposal_items: int = Field(default=10, ge=1, le=10)
 
     @field_validator("ollama_base_url")

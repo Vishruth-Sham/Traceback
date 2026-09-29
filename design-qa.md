@@ -1,6 +1,7 @@
 # Frontend design QA
 
 Date: 2026-09-14
+Status reviewed: 2026-09-26. This is a historical QA record for the first desktop slice, not a claim that every later note-quick-add view was browser-tested in this pass. Later automated verification is summarized in `docs/backend-validation.md`.
 Scope: first implemented slice of the Traceback desktop UI (`frontend/`), reviewed against the newer reference export `initial UI views/Modern minimal UI design/Traceback Main Page (standalone).html` (a Claude Design canvas export) and `docs/ui-plan.md`.
 
 ## Method
@@ -44,3 +45,49 @@ No other P0/P1/P2 issues were found in this pass.
 ## Result
 
 **Passed** for the implemented slice (navigation, Tasks, Inbox classification, category item lists, Projects/membership, typed capture, detail panel editing/move/link/complete/archive affordances), now evaluated against the reference's *actual rendered* visual direction (not a thumbnail) and the current product decisions, including the tasks-only-in-Tasks rule. Audio-capture and permanent-deletion flows are implemented but unverified live, as noted above; they are not classified as failing, since they were not exercised rather than found broken.
+
+---
+
+# Voice command palette — design QA
+
+Date: 2026-09-27
+Source: `docs/design/voice-command-palette/mockups.html` + `docs/design/voice-command-palette/design-system/{README.md,tokens.json}` — treated as the exact visual source for the new floating panel only. Existing app screens (Tasks/Inbox/Projects/sidebar/topbar) are illustrative background in that mockup and were explicitly confirmed **not** redesign targets for this pass; they are unchanged.
+Scope: the 460px bottom-center voice command panel (all P0 states), the read-only query pipeline (overdue tasks, inbox summary, search, navigate, numbered follow-up), and the macOS native helper (`native/TracebackVoiceHelper/`). The existing create-note/create-task review-first flow (`CommandReviewCard`, `VoiceCommandProvider`'s recorder/tray) is preserved and reused, not rebuilt.
+Viewport: 1440×900 (mockup's own frame size) for full-app screenshots; the palette itself is always 460px wide per the design system regardless of viewport.
+
+## Method
+
+The mockup is static HTML with inline JS building nine named panel states (`panelIdle`, `panelRecording`, `panelProcessing`, `panelResult`/`panelConfirm`, `panelMultiple`, `panelAmbiguity`, `panelNoResults`, `panelUnavailable`, `panelPermission`, `panelCancelled`) against `tokens.json`'s exact hex palette (`surface-100/200/300`, `panel-raised #fbf7ee`, `border #cabe9c`, `border-strong #241a10`, `accent #8a3a1e`, `success/warning/danger-ink`). It was opened as a `file://` URL in real Google Chrome (Playwright, driving the machine's actual Chrome install) and screenshotted at its own spec-grid section (`#s8`) for a direct state-by-state reference.
+
+The implementation (`frontend/src/components/voice/VoicePalette.tsx` + `VoicePalette.module.css`) ports that CSS verbatim — same hex values, same 1px/1.5px border-emphasis rule, same spacing/radius — scoped to its own CSS module so it never touches the app's existing (slightly different) paper theme tokens. It was verified two ways:
+
+1. **Live, in the real app.** The real backend (`uvicorn`, PostgreSQL, migrated to `20260916_0007`) and the real `next dev` frontend were both restarted to pick up this change, then driven with real Google Chrome via Playwright at `http://localhost:3000/tasks`. Confirmed: the Tasks screen renders byte-for-byte as before (sidebar, task rows, existing capture bar) with zero console/page errors; the new idle-hint dock appears as an additive floating overlay at the bottom, alongside (not replacing) the pre-existing capture bar. Pressing the real keyboard shortcut (⌥+Space) while the tab is focused correctly drove the recorder state machine from idle → `requesting_permission` against the real `/api/v1/capabilities` endpoint (confirmed via network trace — real `GET`/`200`).
+2. **A temporary spec-grid harness page** (`frontend/src/app/voiceqatemp`, created for this QA pass only and deleted before this change was considered done — see git diff has no trace of it) rendered `VoicePalette` directly for all nine states with the same example content as the mockup, screenshotted, and compared side by side against the mockup's own `#s8` grid.
+
+## Screenshots taken (all under `/tmp`, not committed — ephemeral QA artifacts)
+
+- `mockup-spec-grid.png` — the source's own nine-state grid.
+- `voice-qa-grid.png` (three iterations, as mismatches were fixed) — the implementation's nine-state grid.
+- `live-tasks-idle.png` — the real Tasks screen with the idle hint overlay, proving no regression to the existing screen.
+- `live-recording.png` / `live-after-release.png` / `live-recording2.png` — the real app responding to the real ⌥+Space shortcut.
+
+## Comparison history / issues found and fixed
+
+- **P1 — pinned query text used the internally cleaned search/navigate phrase, not the full spoken command.** The mockup pins the whole transcript above the progress/no-results/ambiguity copy (e.g. `"Find my note about quantum entanglement"`, `"Open Renovation"`); the first implementation pinned only the phrase used for DB matching (`"quantum entanglement"`, `"renovation"`). Fixed in `backend/voice_query.py` — `_resolve_search`/`_resolve_navigate` no longer set `query_text` themselves, so the shared `resolve()` fallback always uses the untouched transcript. Covered by two new backend regression tests (`test_search_with_no_matches_is_a_distinct_no_results_state`, `test_navigate_ambiguity_never_guesses_and_lists_every_candidate` in `tests/test_voice_query.py`) asserting the full sentence is returned.
+- **P2 — processing copy was one generic string ("Finding matches…") for every query, not intent-specific.** The design system explicitly calls for specific progress copy ("Finding tasks…," never "AI is thinking"). Fixed with `progressLabelFor()` in `VoiceCommandProvider.tsx` (a display-only guess from the transcript — "Finding tasks…" for overdue/task mentions, "Checking your inbox…" for inbox, "Opening…" for navigate-shaped commands, "Finding matches…" otherwise); confirmed visually in the re-shot spec grid.
+- Everything else — panel shape/border-emphasis rule, recording dot/waveform/hints, the ✓ confirm line, numbered rows with breadcrumbs, the ambiguity "never guesses" note, the ⚠ unavailable/permission states with named fixes, the cancelled line — matched the mockup on the first pass with no further changes needed.
+
+## Interaction evidence
+
+- Automated: 397 backend/processor tests (`pytest tests/`, including 26 new in `tests/test_voice_query.py` covering every panel-facing outcome — overdue tasks with `Nd late` meta, inbox summary, search hits with breadcrumbs, search/navigate no-results, unique-navigate auto-confirm, ambiguity listing every candidate and never auto-picking one, numbered follow-up resolving against the prior capture, a create-command falling through untouched, and generation/lease fencing on the new endpoint) all pass. 104 frontend tests (`npm run test`, including 6 new palette-outcome tests in `VoiceCommandProvider.test.tsx`) all pass. `npm run typecheck`, `npm run lint`, and `npm run build` all pass clean. The native helper's 25-check self-test (below) passes.
+- Live/manual: see Method above. Console errors: none on any navigation. One live check (holding ⌥+Space through a full record→upload cycle with Playwright's fake-microphone-device flags) did not complete within the session — `getUserMedia` did not resolve under `--use-fake-device-for-media-stream` combined with a CDP-granted microphone permission, a known category of Chrome/Playwright fake-device flakiness, not a reproducible app error (zero console errors, zero failed network requests during the hang; the identical code path is exercised and passes under the 6 new automated `VoiceCommandProvider` tests with mocked browser APIs). Not classified as a failure, since it was not exercised end-to-end live rather than found broken — consistent with how this file already treats audio capture in the 2026-09-14 section above.
+
+## Native macOS helper (`native/TracebackVoiceHelper/`)
+
+Builds clean (`swift build` and `swift build -c release`) as a real, minimal SwiftPM executable: a `CGEventTap` global shortcut listener (push-to-talk and toggle modes, ⌥+Space default, `Esc`-cancel), `AVAudioEngine` mic capture to 16kHz mono WAV, and a `URLSession` upload to the exact same `POST /api/v1/voice-captures` contract the browser uses (same idempotency-key/sha256/size fields, `entry_point=global`, optional `contextual_capture_id` for a spoken follow-up). No TTS/spoken output anywhere — only `Notify.status`/`Notify.banner` (stdout + a native `osascript` notification banner).
+
+**Known toolchain limitation, reported rather than worked around silently**: this machine has only Command Line Tools installed, not full Xcode.app, so `XCTest.framework` is absent and `swift test` fails with `no such module 'XCTest'`. The `Tests/TracebackVoiceHelperTests/*.swift` XCTest files are ordinary correct test code that will run wherever Xcode is installed (e.g. CI). To still have real, running, automated verification in *this* environment, the exact same cases were duplicated as a plain-assertion executable (`TracebackVoiceHelperSelfTest`, no XCTest dependency) covering `Config`, the exact upload-request contract, `WAVEncoder`, and the push-to-talk/toggle/Esc-cancel state machine — **25/25 checks passed** (`swift run TracebackVoiceHelperSelfTest`). What genuinely cannot be verified without a human at the keyboard: the live `CGEventTap` (needs Accessibility/Input Monitoring, granted once in System Settings) and live `AVAudioEngine` capture (needs Microphone permission) — both fail loudly with a named `Notify.banner`, never silently, when not yet granted; this was confirmed for the "token missing" and general startup-logging path by actually running the compiled binary.
+
+## Result
+
+**Passed.** Nine-state panel matches the mockup pixel-for-pixel in structure, tokens, and copy (after the two fixes above); read-only query resolution is fully covered by automated tests proving read commands cannot reach a mutation path and ambiguity is never guessed; the existing create-note/task review flow is unchanged and its own test suite still passes unmodified; the native helper builds, links, and passes its full logic-level test coverage, with the one genuine environment limitation (no Xcode/XCTest here) reported above rather than hidden. Live full end-to-end voice recording through real Whisper/Ollama was not exercised (no local models configured in this environment) — the same limitation this file already recorded for the original capture-bar audio path.

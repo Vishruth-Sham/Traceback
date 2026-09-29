@@ -1,6 +1,6 @@
 # Local MCP adapter
 
-Status: implemented (2026-09-14). `traceback_mcp` is a thin Python stdio MCP
+Status: implemented; reviewed 2026-09-26. `traceback_mcp` is a thin Python stdio MCP
 server (official `mcp` SDK 2.2.0) that wraps the loopback FastAPI REST API
 in `docs/backend-api.md`. It is a second client of that API, not a second
 implementation of its rules: every tool call becomes one authenticated HTTP
@@ -13,6 +13,8 @@ business rules, and the source of canonical IDs, versions, and error codes.
 opens a PostgreSQL connection, and never starts the API or Ollama. If the
 API is not running, every tool call fails with a `backend_unavailable`
 tool error naming the configured URL.
+
+The latest repository-wide verified baseline is 219 Python tests; lower totals later in this document are retained as dated MCP-milestone evidence, not the current suite size. See [backend-validation.md](backend-validation.md).
 
 ## Architecture
 
@@ -169,6 +171,8 @@ explicit request in the current turn.
 | `delete_capture_permanently` | `DELETE /captures/{id}` | **destructive** |
 | `retry_capture` | `POST /captures/{id}/retry` | mutate |
 | `apply_capture_interpretation` | `POST /captures/{id}/interpretations` | mutate (`mode="manual"` only) |
+| `accept_capture_proposal` | `POST /captures/{id}/proposal/accept` | mutate (manual mode; `confirm_overdue`) |
+| `get_capabilities` | `GET /capabilities` | read |
 | `get_item_sources` | `GET /items/{id}/sources` | read |
 | `link_item_source` / `unlink_item_source` | `POST` \| `DELETE /items/{id}/sources/...` | mutate |
 | `get_asset` | `GET /assets/{id}` | read (metadata only) |
@@ -185,6 +189,15 @@ explicit request in the current turn.
   processor's in-flight work with no documented need.
   `apply_capture_interpretation` therefore always sends `mode="manual"`
   and never accepts a `lease_token`.
+- **Voice audio and processor voice routes** — `POST /voice-captures`,
+  `POST /captures/claim-next`, `POST /captures/{id}/transcript`, and the
+  slots form of `POST /captures/{id}/proposal` are REST/processor-only, so no
+  binary audio, lease token, or model output is reachable through MCP. Voice
+  via MCP means a typed command: `create_capture(source_type="typed",
+  processing_profile="voice_command", captured_at=..., source_timezone=...)`
+  (the adapter sets `entry_point="mcp_typed"`, which is never auto-applied),
+  then `get_capture` to read the backend's proposal and
+  `accept_capture_proposal` (or `apply_capture_interpretation`) to accept it.
 - **Raw asset upload/download** — `POST /assets` and
   `GET /assets/{id}/content` stay REST-only. This adapter never accepts an
   arbitrary filesystem path as an asset ID and never embeds raw binary

@@ -25,6 +25,15 @@ from processor.errors import ModelUnavailableError, TranscriptionError
 from processor.runner import RestClient, RestError, RunnerConfig, run_once
 
 
+from tests.conftest import drain_claimable_captures
+
+
+@pytest.fixture(autouse=True)
+def _empty_queue(request):
+    if "client" in request.fixturenames:
+        drain_claimable_captures(request.getfixturevalue("client"))
+
+
 class FakeRestClient:
     """Duck-types the subset of RestClient used by run_once."""
 
@@ -179,16 +188,18 @@ def test_typed_capture_happy_path(monkeypatch):
     assert not fake.failed
 
 
-def test_audio_capture_downloads_and_transcribes(monkeypatch):
+def test_legacy_general_audio_is_transcribed_then_frozen_to_review(monkeypatch):
+    """Plan §18: the retired general-audio path never auto-interprets; the transcript is kept via /fail."""
     monkeypatch.setattr(runner_module, "transcribe", lambda path, settings=None: "transcribed text")
-    monkeypatch.setattr(runner_module, "interpret", lambda text, context, settings=None: {"items": [{"item_type": "note", "title": "x", "content_md": text, "category_id": None, "due_date": None, "due_time": None, "due_timezone": None}]})
+    monkeypatch.setattr(runner_module, "interpret", lambda *a, **k: pytest.fail("legacy audio must not be interpreted"))
     capture = _typed_capture(source_type="audio", raw_text=None, asset_ids=[str(uuid.uuid4())])
     fake = FakeRestClient(capture=capture)
     result = run_once(rest=fake, config=_config())
-    assert result["status"] == "interpreted"
+    assert result == {"capture_id": capture["id"], "status": "failed", "error_code": "legacy_audio_requires_review"}
     assert fake.downloaded == [capture["asset_ids"][0]]
-    assert fake.submitted[0]["transcript"] == "transcribed text"
-    assert fake.submitted[0]["operations"][0]["item"]["content_md"] == "transcribed text"
+    assert fake.failed[0]["transcript"] == "transcribed text"
+    assert fake.failed[0]["error_code"] == "legacy_audio_requires_review"
+    assert not fake.submitted
 
 
 def test_proposed_project_id_is_resolved_to_a_placement_operation(monkeypatch):

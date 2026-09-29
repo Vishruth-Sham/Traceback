@@ -18,6 +18,66 @@ function apiToken(): string {
   return token;
 }
 
+// Voice ingest is the one route whose body is bounded here. This is bounded
+// buffering, not streaming: the whole recording is still held in memory before
+// it is forwarded, but never more than the cap (+ one chunk), whatever the
+// client claims. Every other route keeps its existing behaviour.
+const VOICE_INGEST_PATH = "voice-captures";
+const DEFAULT_VOICE_MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+function voiceMaxUploadBytes(): number {
+  const raw = process.env.TRACEBACK_VOICE_MAX_UPLOAD_BYTES;
+  const parsed = raw ? Number.parseInt(raw, 10) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_VOICE_MAX_UPLOAD_BYTES;
+}
+
+function errorResponse(status: number, code: string, message: string, details: Record<string, unknown> = {}) {
+  return NextResponse.json({ error: { code, message, details } }, { status });
+}
+
+/** Read the request body, giving up (null) the moment it exceeds `cap` bytes. */
+async function readBounded(req: NextRequest, cap: number): Promise<Uint8Array | null> {
+  if (!req.body) return new Uint8Array(0);
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > cap) {
+      await reader.cancel().catch(() => undefined);
+      return null;
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+async function readRequestBody(req: NextRequest, path: string): Promise<BodyInit | undefined | NextResponse> {
+  if (["GET", "HEAD"].includes(req.method)) return undefined;
+  if (req.method !== "POST" || path !== VOICE_INGEST_PATH) return await req.arrayBuffer();
+
+  const cap = voiceMaxUploadBytes();
+  const tooLarge = () =>
+    errorResponse(413, "upload_too_large", "Recording exceeds the voice upload limit", { max_upload_bytes: cap });
+  const declared = Number.parseInt(req.headers.get("content-length") ?? "", 10);
+  if (Number.isFinite(declared) && declared > cap) return tooLarge(); // before the body is read at all
+  const bytes = await readBounded(req, cap);
+  if (bytes === null) return tooLarge();
+  const declaredSize = req.nextUrl.searchParams.get("size");
+  if (declaredSize !== null && Number.parseInt(declaredSize, 10) !== bytes.byteLength) {
+    return errorResponse(400, "size_mismatch", "The recording size does not match the declared size");
+  }
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+}
+
 async function forward(req: NextRequest, segments: string[]): Promise<NextResponse> {
   const path = segments.join("/");
   const search = req.nextUrl.search;
@@ -31,13 +91,9 @@ async function forward(req: NextRequest, segments: string[]): Promise<NextRespon
   headers.set("X-Traceback-Client", "web");
   headers.set("Authorization", `Bearer ${apiToken()}`);
 
-  const hasBody = !["GET", "HEAD"].includes(req.method);
-  const init: RequestInit = {
-    method: req.method,
-    headers,
-    body: hasBody ? await req.arrayBuffer() : undefined,
-    cache: "no-store",
-  };
+  const body = await readRequestBody(req, path);
+  if (body instanceof NextResponse) return body;
+  const init: RequestInit = { method: req.method, headers, body, cache: "no-store" };
 
   let upstream: Response;
   try {

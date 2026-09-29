@@ -1,7 +1,7 @@
 # Traceback — Personal Memory and Graph Plan
 
-Date: 2026-09-12  
-Status: Future phase, after the local backend and core UI work. This is a design proposal, not an implemented feature.  
+Originally drafted: 2026-09-12; reviewed: 2026-09-26
+Status: Future phase. The required local backend/UI foundations now exist, but personal facts/preferences, extraction, evidence review, context APIs/MCP tools, and graph exploration are not implemented. Daily-use hardening of the core application comes first.
 Dependencies: [Backend plan](backend-plan.md), [UI plan](ui-plan.md).
 
 ## Purpose and boundary

@@ -27,6 +27,7 @@ from backend.capture_schemas import (
     SourceLinkRequest,
     SourceOut,
     SourceUnlinkRequest,
+    VoiceProposalRequest,
 )
 from backend.config import Settings, get_settings
 from backend.db import get_session
@@ -45,6 +46,17 @@ from backend.services import (
     record_revision,
     require_version,
     utcnow,
+)
+from backend.voice_service import (
+    build_voice_proposal,
+    capability_disabled,
+    effective_transcript,
+    is_voice,
+    profile_of,
+    proposal_digest,
+    require_voice_enabled,
+    sha256_text,
+    voice_audit,
 )
 
 
@@ -150,13 +162,23 @@ def add_capture_revision(session: Session, capture: Capture, action: Action, cha
     )
 
 
-def processing_conflict(message: str, processing: CaptureProcessing) -> DomainError:
-    return DomainError(
-        "processing_conflict",
-        message,
-        409,
-        {"state": processing.state, "generation": processing.generation},
-    )
+def processing_conflict(message: str, processing: CaptureProcessing, capture: Capture | None = None) -> DomainError:
+    details: dict[str, Any] = {"state": processing.state, "generation": processing.generation}
+    if capture is not None:
+        details["version"] = capture.version
+        details["proposal_sha256"] = (processing.proposal or {}).get("proposal_sha256")
+    return DomainError("processing_conflict", message, 409, details)
+
+
+def capture_state_details(capture: Capture) -> dict[str, Any]:
+    """Fresh state a polling client needs to refetch safely after a 409."""
+    processing = capture.processing
+    return {
+        "version": capture.version,
+        "generation": processing.generation,
+        "state": processing.state,
+        "proposal_sha256": (processing.proposal or {}).get("proposal_sha256"),
+    }
 
 
 def validate_generation(processing: CaptureProcessing, expected: int) -> None:
@@ -193,7 +215,9 @@ def encode_cursor(offset: int) -> str:
 
 
 @router.post("/captures", response_model=CaptureOut, status_code=201)
-def create_capture_endpoint(body: CaptureCreate, session: SessionDep, context: ActionContext):
+def create_capture_endpoint(body: CaptureCreate, session: SessionDep, context: ActionContext, settings: SettingsDep):
+    if body.metadata.processing_profile == "voice_command":
+        require_voice_enabled(settings)
     payload = body.model_dump(mode="json")
     action, replay = begin_action(session, "create_capture", payload, context[0], client_label=context[1])
     if replay:
@@ -209,6 +233,9 @@ def create_capture_endpoint(body: CaptureCreate, session: SessionDep, context: A
         timestamp_origin=body.timestamp_origin,
         source_metadata=body.metadata.model_dump(mode="json", exclude_none=True),
     )
+    if body.metadata.processing_profile == "voice_command":
+        # The initially observed client time is kept even if a later correction changes the effective anchor.
+        capture.source_metadata = {**capture.source_metadata, "observed_captured_at": body.captured_at.isoformat()}
     capture.processing = CaptureProcessing(state="pending", generation=1, attempt_count=0)
     session.add(capture)
     session.flush()
@@ -257,7 +284,7 @@ def read_capture(capture_id: uuid.UUID, session: SessionDep):
 
 
 @router.post("/captures/{capture_id}/corrections", response_model=CaptureOut)
-def correct_capture(capture_id: uuid.UUID, body: CaptureCorrectionCreate, session: SessionDep, context: ActionContext):
+def correct_capture(capture_id: uuid.UUID, body: CaptureCorrectionCreate, session: SessionDep, context: ActionContext, settings: SettingsDep):
     payload = {"capture_id": str(capture_id), **body.model_dump(mode="json", exclude_unset=True)}
     action, replay = begin_action(session, "correct_capture", payload, context[0], client_label=context[1])
     if replay:
@@ -265,10 +292,21 @@ def correct_capture(capture_id: uuid.UUID, body: CaptureCorrectionCreate, sessio
     capture = get_capture(session, capture_id, lock=True)
     require_capture_version(capture, body.expected_version)
     changes = body.model_dump(mode="json", exclude_unset=True, exclude={"expected_version"})
+    voice = is_voice(capture)
+    if "transcript_text" in changes and not voice:
+        raise DomainError("invalid_correction", "transcript_text is only valid for voice_command captures", 422)
+    voice_requeue = voice and bool(set(changes) & {"transcript_text", "captured_at", "source_timezone"})
+    if voice_requeue:
+        if not settings.voice_commands_enabled:
+            raise DomainError("capability_disabled", "Voice reprocessing is disabled; use Type it instead", 409)
+        if capture.processing.state == "resolved":
+            raise processing_conflict("Resolved voice captures cannot be reprocessed", capture.processing)
+        if capture.archived_at is not None:
+            raise processing_conflict("Archived captures cannot be reprocessed", capture.processing)
     capture.version += 1
-    if capture.source_metadata.get("processing_profile") == "note_quick_add" and set(changes) & {
+    if voice_requeue or (capture.source_metadata.get("processing_profile") == "note_quick_add" and set(changes) & {
         "note_text", "supplied_title", "placement_hint"
-    }:
+    }):
         if capture.processing.state == "resolved":
             raise processing_conflict("Resolved note captures cannot be edited", capture.processing)
         capture.processing.generation += 1
@@ -297,13 +335,17 @@ def lifecycle(capture_id: uuid.UUID, body: CaptureVersionRequest, archived: bool
     require_capture_version(capture, body.expected_version)
     if (capture.archived_at is not None) == archived:
         raise DomainError("invalid_transition", "Capture is already in the requested archive state", 409)
+    prior_state, prior_proposal = capture.processing.state, capture.processing.proposal
     capture.archived_at = utcnow() if archived else None
     capture.version += 1
     if archived and capture.processing.state == "processing":
         capture.processing.generation += 1
         capture.processing.state = "pending"
         clear_lease(capture.processing)
-    add_capture_revision(session, capture, action, operation, {})
+    discard: dict[str, Any] = {}
+    if archived and is_voice(capture) and prior_state == "awaiting_review" and prior_proposal:
+        discard = {"proposal_generation": prior_proposal.get("generation"), "discarded_after_proposal": True}
+    add_capture_revision(session, capture, action, operation, discard)
     session.flush()
     result = json_capture(session, capture, action.id)
     finish_action(action, result)
@@ -351,8 +393,26 @@ def delete_capture(
     return Response(status_code=204)
 
 
+def take_lease(capture: Capture, lease_seconds: int) -> ClaimOut:
+    """Move an eligible capture to `processing` under a fresh lease. Never bumps `version`."""
+    processing = capture.processing
+    now = utcnow()
+    processing.state = "processing"
+    processing.lease_token = uuid.uuid4()
+    processing.lease_expires_at = now + timedelta(seconds=lease_seconds)
+    processing.started_at = now
+    processing.finished_at = None
+    processing.attempt_count += 1
+    return ClaimOut(
+        capture_id=capture.id,
+        generation=processing.generation,
+        lease_token=processing.lease_token,
+        lease_expires_at=processing.lease_expires_at,
+    )
+
+
 @router.post("/captures/{capture_id}/claim", response_model=ClaimOut)
-def claim_capture(capture_id: uuid.UUID, body: CaptureClaimRequest, session: SessionDep, context: ActionContext):
+def claim_capture(capture_id: uuid.UUID, body: CaptureClaimRequest, session: SessionDep, context: ActionContext, settings: SettingsDep):
     payload = {"capture_id": str(capture_id), **body.model_dump(mode="json")}
     action, replay = begin_action(session, "claim_capture", payload, context[0], actor="processor", client_label=context[1])
     if replay:
@@ -367,18 +427,9 @@ def claim_capture(capture_id: uuid.UUID, body: CaptureClaimRequest, session: Ses
         raise processing_conflict("Capture already has an active lease", processing)
     if processing.state not in ("pending", "processing"):
         raise processing_conflict("Retry a failed capture before claiming it", processing)
-    processing.state = "processing"
-    processing.lease_token = uuid.uuid4()
-    processing.lease_expires_at = now + timedelta(seconds=body.lease_seconds)
-    processing.started_at = now
-    processing.finished_at = None
-    processing.attempt_count += 1
-    result = ClaimOut(
-        capture_id=capture.id,
-        generation=processing.generation,
-        lease_token=processing.lease_token,
-        lease_expires_at=processing.lease_expires_at,
-    ).model_dump(mode="json")
+    if is_voice(capture) and not settings.voice_commands_enabled:
+        raise capability_disabled()
+    result = take_lease(capture, body.lease_seconds).model_dump(mode="json")
     finish_action(action, result)
     session.commit()
     return result
@@ -400,17 +451,16 @@ def fail_capture(capture_id: uuid.UUID, body: CaptureFailRequest, session: Sessi
     processing.state = "failed"
     processing.error_code = body.error_code
     processing.error_message = body.error_message
-    processing.transcript = body.transcript
+    # A checkpointed voice transcript survives a later-stage failure: /fail never nulls it.
+    if body.transcript is not None or not is_voice(capture):
+        processing.transcript = body.transcript
     processing.finished_at = utcnow()
     clear_lease(processing)
     capture.version += 1
-    add_capture_revision(
-        session,
-        capture,
-        action,
-        "processing_failed",
-        {"generation": processing.generation, "error_code": body.error_code},
-    )
+    failure_changes: dict[str, Any] = {"generation": processing.generation, "error_code": body.error_code}
+    if is_voice(capture) and processing.transcript:
+        failure_changes.update(transcript_sha256=sha256_text(processing.transcript), transcript_length=len(processing.transcript))
+    add_capture_revision(session, capture, action, "processing_failed", failure_changes)
     session.flush()
     result = json_capture(session, capture, action.id)
     finish_action(action, result)
@@ -419,7 +469,7 @@ def fail_capture(capture_id: uuid.UUID, body: CaptureFailRequest, session: Sessi
 
 
 @router.post("/captures/{capture_id}/retry", response_model=CaptureOut)
-def retry_capture(capture_id: uuid.UUID, body: CaptureRetryRequest, session: SessionDep, context: ActionContext):
+def retry_capture(capture_id: uuid.UUID, body: CaptureRetryRequest, session: SessionDep, context: ActionContext, settings: SettingsDep):
     payload = {"capture_id": str(capture_id), **body.model_dump(mode="json")}
     action, replay = begin_action(session, "retry_capture", payload, context[0], client_label=context[1])
     if replay:
@@ -429,6 +479,8 @@ def retry_capture(capture_id: uuid.UUID, body: CaptureRetryRequest, session: Ses
     validate_generation(capture.processing, body.expected_generation)
     if capture.archived_at is not None or capture.processing.state != "failed":
         raise processing_conflict("Only active failed captures can be retried", capture.processing)
+    if is_voice(capture) and not settings.voice_commands_enabled:
+        raise DomainError("capability_disabled", "Voice reprocessing is disabled; use Type it instead", 409)
     capture.version += 1
     capture.processing.generation += 1
     capture.processing.state = "pending"
@@ -446,9 +498,20 @@ def retry_capture(capture_id: uuid.UUID, body: CaptureRetryRequest, session: Ses
     return result
 
 
+def require_live_lease(processing: CaptureProcessing, lease_token: uuid.UUID, capture: Capture | None = None) -> None:
+    if processing.state != "processing" or processing.lease_token != lease_token:
+        raise processing_conflict("Processor lease is stale", processing, capture)
+    if not processing.lease_expires_at or processing.lease_expires_at <= utcnow():
+        raise processing_conflict("Processor lease expired", processing, capture)
+
+
 @router.post("/captures/{capture_id}/proposal", response_model=CaptureOut)
 def submit_capture_proposal(
-    capture_id: uuid.UUID, body: CaptureProposalRequest, session: SessionDep, context: ActionContext
+    capture_id: uuid.UUID,
+    body: CaptureProposalRequest | VoiceProposalRequest,
+    session: SessionDep,
+    context: ActionContext,
+    settings: SettingsDep,
 ):
     payload = {"capture_id": str(capture_id), **body.model_dump(mode="json")}
     action, replay = begin_action(session, "submit_capture_proposal", payload, context[0], actor="processor", client_label=context[1])
@@ -458,23 +521,44 @@ def submit_capture_proposal(
     require_capture_version(capture, body.expected_version)
     processing = capture.processing
     validate_generation(processing, body.expected_generation)
-    if capture.source_metadata.get("processing_profile") != "note_quick_add":
-        raise DomainError("invalid_proposal", "Only note quick-add captures accept proposals", 422)
-    if processing.state != "processing" or processing.lease_token != body.lease_token:
-        raise processing_conflict("Processor lease is stale", processing)
-    if not processing.lease_expires_at or processing.lease_expires_at <= utcnow():
-        raise processing_conflict("Processor lease expired", processing)
-    proposal = body.proposal.model_dump(mode="json")
-    destination_id = body.proposal.destination_id
-    if body.proposal.destination_kind == "category":
-        if session.get(Category, destination_id) is None:
-            raise DomainError("invalid_proposal", "Proposed category is not active", 422)
-    elif body.proposal.destination_kind in ("project", "folder"):
-        destination = session.scalar(select(Item).where(Item.id == destination_id).with_for_update(of=Item))
-        if destination is None or destination.archived_at is not None or destination.item_type != body.proposal.destination_kind:
-            raise DomainError("invalid_proposal", "Proposed destination is unknown, archived, or the wrong type", 422)
-        require_version(destination, body.proposal.destination_version)
-    processing.proposal = {**proposal, "generation": processing.generation}
+    profile = profile_of(capture)
+    voice_body = isinstance(body, VoiceProposalRequest)
+    if profile == "voice_command" and not voice_body:
+        raise DomainError("invalid_proposal", "Voice captures accept only slot proposals", 422)
+    if profile not in ("note_quick_add", "voice_command") or (profile == "note_quick_add" and voice_body):
+        raise DomainError("invalid_proposal", "Only note quick-add and voice-command captures accept proposals", 422)
+    require_live_lease(processing, body.lease_token)
+    if voice_body:
+        now = utcnow()
+        proposal = build_voice_proposal(
+            session, capture, effective_corrections(session, capture.id), body.slots.model_dump(mode="json"), body.model_confidence, settings, now
+        )
+        proposal["generation"] = processing.generation
+        proposal["proposal_sha256"] = proposal_digest(proposal)
+        processing.proposal = proposal
+        transcript = effective_transcript(capture, effective_corrections(session, capture.id)) or ""
+        revision_changes: dict[str, Any] = {
+            "generation": processing.generation,
+            "proposal": proposal,
+            "intent": proposal["intent"],
+            "disposition": proposal["disposition"],
+            "transcript_sha256": sha256_text(transcript),
+            "transcript_length": len(transcript),
+            "stt": body.stt.model_dump(mode="json", exclude_none=True) if body.stt else None,
+        }
+    else:
+        proposal = body.proposal.model_dump(mode="json")
+        destination_id = body.proposal.destination_id
+        if body.proposal.destination_kind == "category":
+            if session.get(Category, destination_id) is None:
+                raise DomainError("invalid_proposal", "Proposed category is not active", 422)
+        elif body.proposal.destination_kind in ("project", "folder"):
+            destination = session.scalar(select(Item).where(Item.id == destination_id).with_for_update(of=Item))
+            if destination is None or destination.archived_at is not None or destination.item_type != body.proposal.destination_kind:
+                raise DomainError("invalid_proposal", "Proposed destination is unknown, archived, or the wrong type", 422)
+            require_version(destination, body.proposal.destination_version)
+        processing.proposal = {**proposal, "generation": processing.generation}
+        revision_changes = {"generation": processing.generation, "proposal": processing.proposal}
     processing.proposed_at = utcnow()
     processing.state = "awaiting_review"
     processing.error_code = None
@@ -482,7 +566,7 @@ def submit_capture_proposal(
     processing.finished_at = utcnow()
     clear_lease(processing)
     capture.version += 1
-    add_capture_revision(session, capture, action, "proposal", {"generation": processing.generation, "proposal": processing.proposal})
+    add_capture_revision(session, capture, action, "proposal", revision_changes)
     session.flush()
     result = json_capture(session, capture, action.id)
     finish_action(action, result)
@@ -490,37 +574,48 @@ def submit_capture_proposal(
     return result
 
 
-@router.post("/captures/{capture_id}/interpretations")
-def interpret_capture(capture_id: uuid.UUID, body: CaptureInterpretationRequest, session: SessionDep, context: ActionContext):
-    payload = {"capture_id": str(capture_id), **body.model_dump(mode="json")}
-    actor = "processor" if body.mode == "processor" else "user"
-    action, replay = begin_action(session, "apply_capture_interpretation", payload, context[0], actor=actor, client_label=context[1])
-    if replay:
-        return replay
-    capture = get_capture(session, capture_id, lock=True)
-    require_capture_version(capture, body.expected_version)
-    processing = capture.processing
-    if capture.source_metadata.get("processing_profile") == "task_quick_add":
+def validate_interpretation_rules(session: Session, capture: Capture, body: CaptureInterpretationRequest) -> None:
+    profile = profile_of(capture)
+    only_create = len(body.items) == 1 and isinstance(body.items[0], CreateInterpretationItem)
+    if profile == "task_quick_add":
         if len(body.items) != 1 or not isinstance(body.items[0], CreateInterpretationItem) or body.items[0].item.item_type != "task":
             raise DomainError(
                 "invalid_interpretation",
                 "Task quick-add captures must resolve to exactly one newly created task",
                 422,
             )
-    if capture.source_metadata.get("processing_profile") == "note_quick_add":
+    if profile == "note_quick_add":
         if len(body.items) != 1 or not isinstance(body.items[0], CreateInterpretationItem) or body.items[0].item.item_type != "note":
             raise DomainError("invalid_interpretation", "Note quick-add captures must resolve to exactly one newly created note", 422)
         effective = effective_note_values(session, capture)
         if body.items[0].item.content_md != effective["note_text"]:
             raise DomainError("invalid_interpretation", "Note content must match the saved capture or its latest correction", 422)
+    if profile == "voice_command":
+        if body.mode == "processor":
+            raise DomainError("auto_apply_unavailable", "Voice commands are review-first; processor-mode interpretation is not available", 422)
+        if not only_create or body.items[0].item.item_type not in ("note", "task"):
+            raise DomainError("invalid_interpretation", "Voice captures resolve to exactly one newly created note or task", 422)
+    if body.mode == "processor" and capture.source_type == "audio" and profile == "general":
+        # Legacy microphone captures are frozen to review: the processor may transcribe but never auto-applies.
+        raise DomainError("legacy_audio_requires_review", "General audio captures require manual review", 422)
+
+
+def apply_interpretation(
+    session: Session,
+    capture: Capture,
+    action: Action,
+    body: CaptureInterpretationRequest,
+    *,
+    accept_path: str | None = None,
+    overdue_confirmed: bool = False,
+) -> dict[str, Any]:
+    """Shared transaction for manual interpretation and proposal accept. Caller owns commit."""
+    processing = capture.processing
     validate_generation(processing, body.expected_generation)
     if capture.archived_at is not None or processing.state == "resolved":
-        raise processing_conflict("Capture cannot be interpreted in its current state", processing)
+        raise processing_conflict("Capture cannot be interpreted in its current state", processing, capture)
     if body.mode == "processor":
-        if processing.state != "processing" or processing.lease_token != body.lease_token:
-            raise processing_conflict("Processor lease is stale", processing)
-        if not processing.lease_expires_at or processing.lease_expires_at <= utcnow():
-            raise processing_conflict("Processor lease expired", processing)
+        require_live_lease(processing, body.lease_token)
     # Acquire every existing-item lock (append targets and create-operation
     # containers alike) in one stable UUID order before applying the batch.
     # This keeps multi-item interpretations atomic without deadlocks.
@@ -554,6 +649,7 @@ def interpret_capture(capture_id: uuid.UUID, body: CaptureInterpretationRequest,
         expected_type = "project" if operation.project_id else "folder"
         if container.item_type != expected_type:
             raise DomainError("invalid_input", f"{expected_type}_id must identify a {expected_type}", 422)
+    stored_proposal = processing.proposal
     results: list[dict[str, Any]] = []
     for operation in body.items:
         if isinstance(operation, AppendInterpretationItem):
@@ -585,13 +681,32 @@ def interpret_capture(capture_id: uuid.UUID, body: CaptureInterpretationRequest,
     if body.mode == "manual":
         processing.generation += 1
     capture.version += 1
-    add_capture_revision(
-        session,
-        capture,
-        action,
-        "interpreted",
-        {"mode": body.mode, "item_ids": [str(result["id"]) for result in results], "generation": processing.generation},
-    )
+    changes: dict[str, Any] = {"mode": body.mode, "item_ids": [str(result["id"]) for result in results], "generation": processing.generation}
+    if is_voice(capture) and create_operations:
+        operation = create_operations[0]
+        destination = None
+        if operation.project_id:
+            destination = {"kind": "project", "id": str(operation.project_id), "version": operation.project_expected_version}
+        elif operation.folder_id:
+            destination = {"kind": "folder", "id": str(operation.folder_id), "version": operation.folder_expected_version}
+        elif operation.item.category_id:
+            destination = {"kind": "category", "id": str(operation.item.category_id), "version": None}
+        changes["voice_audit"] = voice_audit(
+            stored=stored_proposal if stored_proposal and stored_proposal.get("kind") == "voice_command" else None,
+            submitted={
+                "item_type": operation.item.item_type,
+                "title": operation.item.title,
+                "content_md": operation.item.content_md,
+                "due_date": operation.item.due_date,
+                "due_time": operation.item.due_time,
+                "due_timezone": operation.item.due_timezone,
+                "destination": destination,
+            },
+            content_md=operation.item.content_md,
+            accept_path=accept_path or "manual_interpretation",
+            overdue_confirmed=overdue_confirmed,
+        )
+    add_capture_revision(session, capture, action, "interpreted", changes)
     session.flush()
     result = {
         "capture": json_capture(session, capture, action.id),
@@ -599,6 +714,20 @@ def interpret_capture(capture_id: uuid.UUID, body: CaptureInterpretationRequest,
         "action_id": str(action.id),
     }
     finish_action(action, result)
+    return result
+
+
+@router.post("/captures/{capture_id}/interpretations")
+def interpret_capture(capture_id: uuid.UUID, body: CaptureInterpretationRequest, session: SessionDep, context: ActionContext):
+    payload = {"capture_id": str(capture_id), **body.model_dump(mode="json")}
+    actor = "processor" if body.mode == "processor" else "user"
+    action, replay = begin_action(session, "apply_capture_interpretation", payload, context[0], actor=actor, client_label=context[1])
+    if replay:
+        return replay
+    capture = get_capture(session, capture_id, lock=True)
+    require_capture_version(capture, body.expected_version)
+    validate_interpretation_rules(session, capture, body)
+    result = apply_interpretation(session, capture, action, body)
     session.commit()
     return result
 

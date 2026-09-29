@@ -11,6 +11,7 @@ from backend.captures import router as capture_router
 from backend.config import get_settings
 from backend.errors import DomainError
 from backend.locations import router as location_router
+from backend.voice import router as voice_router
 
 
 def create_app() -> FastAPI:
@@ -58,6 +59,7 @@ def create_app() -> FastAPI:
     app.include_router(asset_router)
     app.include_router(capture_router)
     app.include_router(location_router)
+    app.include_router(voice_router)
     return app
 
 

@@ -1,0 +1,19 @@
+<!-- @dsCard group="Screens · P0 voice flow" height=380 width=1440 subtitle="5. Ambiguity / clarification" -->
+<div id="root"></div>
+<script>
+  (function () {
+    var el = document.getElementById("root");
+    Traceback.shell(el, { active: "Projects", bodyHtml: Traceback.bodyProjects() });
+    el.querySelector(".tb-frame").insertAdjacentHTML(
+      "beforeend",
+      Traceback.panelAmbiguity({
+        query: "Open Renovation",
+        title: "I found two projects named Renovation",
+        rows: [
+          ["Renovation", "Home"],
+          ["Renovation", "Archive"]
+        ]
+      })
+    );
+  })();
+</script>

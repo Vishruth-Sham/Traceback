@@ -1,5 +1,7 @@
 # Implemented local API
 
+Status reviewed: 2026-09-26. Current schema head: `20260915_0006`. This is the authoritative human-readable description of the implemented REST surface; `/openapi.json` is the runtime field-level schema.
+
 This milestone supports `note`, `task`, `project`, and `folder` items. Categories are read-only seeds. Captures, attachments, provenance, durable processing state, manual interpretation, a bounded local-model runner, the local MCP adapter (see [mcp-adapter.md](mcp-adapter.md)), filesystem-style nested folders (see [folder-hierarchy-backend-spec.md](folder-hierarchy-backend-spec.md)), and the first functioning desktop UI are implemented. Entity/reference item types, reminders, and the memory graph are not. Directly authored items have revision history; no source capture is fabricated for them.
 
 All routes below use `/api/v1`. Send `Authorization: Bearer <TRACEBACK_API_TOKEN>`; only `/health/live` is public. `/health/ready` checks database readiness. The OpenAPI schema at `/openapi.json` describes request fields; `/docs` provides the API explorer. Browser origins default to localhost/127.0.0.1 on port 3000, configurable with `TRACEBACK_ALLOWED_ORIGINS`.
@@ -66,5 +68,17 @@ A `"create"` interpretation operation may add `project_id`+`project_expected_ver
 `GET /items/{id}/sources` exposes provenance. Versioned source link/unlink routes are `/items/{id}/sources` and `/items/{id}/sources/{source_id}`. A referenced capture cannot be permanently deleted. Archive the capture, unlink its sources deliberately, then use `DELETE /captures/{id}?expected_version=N&confirm=true`. Deleting a capture does not delete referenced asset bytes.
 
 Upload original bytes with `POST /assets?filename=...` using the request body as the raw file. Optional timezone-aware `source_created_at` and `source_modified_at` remain distinct from `uploaded_at`. The server generates an opaque storage key, calculates byte size and SHA-256, and detects MIME type; supplied filenames never become paths. `GET /assets/{id}` returns metadata and references; `/content` streams original bytes as an attachment. Item asset link/unlink operations are versioned. Asset deletion requires archive, confirmation, and no remaining capture/item references; failed byte cleanup remains retryable.
+
+### Voice commands
+
+Voice commands are opt-in (`TRACEBACK_VOICE_COMMANDS_ENABLED`, default off) and review-first; see [features/voice-commands.md](features/voice-commands.md) for the full contract. Added routes:
+
+- `GET /capabilities` — read-only, `Cache-Control: no-store`: `voice_commands` (`enabled`, `accepts_audio`, `reason`, `max_seconds`, `max_upload_bytes`, `accepted_mime_types`, `allowed_intents`, `auto_apply_intents` (always empty), `policy_version`, `low_disk`) and `queue` (`pending_voice`, `oldest_pending_age_s`).
+- `POST /voice-captures` — raw audio body plus query `size`, `sha256`, `captured_at`, `source_timezone`, `entry_point`, optional `filename`, `contextual_item_id`, repeated `allowed_intent`, `duration_ms`; **requires `Idempotency-Key`**. One transaction saves the bytes, asset, `voice_command` capture, and `created` revision; the same key and payload replays the recorded capture. Errors: 400 `idempotency_key_required`/`size_mismatch`, 403 `capability_disabled`, 409 `idempotency_conflict`/`duplicate_recording`, 413 `upload_too_large`, 415 `unsupported_media`, 422 `digest_mismatch`/`size_mismatch`/`duration_too_long`, 507 `insufficient_storage`.
+- `POST /captures` accepts `metadata.processing_profile: "voice_command"` (typed only; `captured_at` and `source_timezone` required) with optional `entry_point`, `allowed_intents`, `duration_ms`; the initially observed client time is kept as `metadata.observed_captured_at`.
+- Processor-only: `POST /captures/claim-next`, `POST /captures/{id}/transcript` (checkpoint, no version bump), and a slots body on `POST /captures/{id}/proposal` (`slots`, `model_confidence`, `stt`; unknown fields are 422).
+- `POST /captures/{id}/proposal/accept` — `{expected_version, expected_generation, overrides?, confirm_overdue?}`; 422 `nothing_to_accept` / `overdue_confirmation_required`; 409 details carry `version`, `generation`, `state`, `proposal_sha256`.
+- `POST /captures/{id}/corrections` accepts `transcript_text` (voice captures); voice corrections of `transcript_text`, `captured_at` or `source_timezone` requeue at a new generation.
+- `POST /captures/{id}/interpretations` on a `voice_command` capture accepts exactly one created note or task in manual mode; `mode: "processor"` is refused (`auto_apply_unavailable`) and, for legacy `general` audio captures, `legacy_audio_requires_review`.
 
 The API service layer owns domain rules and transactions. The local stdio MCP adapter (`traceback_mcp`, see [mcp-adapter.md](mcp-adapter.md)) calls this REST API exactly as described above and preserves its versions and errors; it never imports backend/database modules directly.

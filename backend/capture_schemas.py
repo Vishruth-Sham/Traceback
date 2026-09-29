@@ -1,5 +1,5 @@
 import uuid
-from datetime import date, datetime
+from datetime import date, datetime, time
 from typing import Annotated, Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -8,12 +8,20 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator, 
 from backend.schemas import ItemCreate, StrictModel
 
 
+VoiceEntryPoint = Literal["global", "tasks", "notes", "project", "folder", "category", "inbox", "mcp_typed"]
+VoiceCreateIntent = Literal["create_note", "create_task"]
+
+
 class CaptureMetadata(StrictModel):
-    processing_profile: Literal["general", "task_quick_add", "note_quick_add"] = "general"
+    processing_profile: Literal["general", "task_quick_add", "note_quick_add", "voice_command"] = "general"
+    allowed_intents: list[VoiceCreateIntent] | None = Field(default=None, max_length=2)
+    entry_point: VoiceEntryPoint | None = None
+    duration_ms: int | None = Field(default=None, ge=0, le=3_600_000)
     client_app: str | None = Field(default=None, max_length=200)
     external_source_id: str | None = Field(default=None, max_length=500)
     contextual_item_id: uuid.UUID | None = None
     timestamp_precision: Literal["exact", "date", "approximate", "unknown"] = "unknown"
+    contextual_capture_id: uuid.UUID | None = None
     supplied_title: str | None = Field(default=None, max_length=1000)
     supplied_author: str | None = Field(default=None, max_length=500)
     supplied_published_date: date | None = None
@@ -63,6 +71,18 @@ class CaptureCreate(StrictModel):
             raise ValueError("capture must preserve text, description, URL, or an asset")
         if (self.captured_at or self.source_date) and self.timestamp_origin == "unknown":
             raise ValueError("timestamp_origin is required when a source timestamp is supplied")
+        if self.metadata.processing_profile == "voice_command":
+            if self.source_type != "typed":
+                raise ValueError("voice_command audio must be sent through POST /voice-captures")
+            if self.captured_at is None or not self.source_timezone:
+                raise ValueError("voice_command captures require captured_at and source_timezone")
+        elif (
+            self.metadata.allowed_intents is not None
+            or self.metadata.entry_point is not None
+            or self.metadata.duration_ms is not None
+            or self.metadata.contextual_capture_id is not None
+        ):
+            raise ValueError("allowed_intents, entry_point, duration_ms and contextual_capture_id are only valid for voice_command captures")
         return self
 
 
@@ -75,6 +95,7 @@ class CaptureCorrectionCreate(StrictModel):
     source_timezone: str | None = None
     note: str | None = Field(default=None, max_length=10_000)
     note_text: str | None = Field(default=None, min_length=1, max_length=2_000_000)
+    transcript_text: str | None = Field(default=None, min_length=1, max_length=20_000)
     supplied_title: str | None = Field(default=None, max_length=1000)
     placement_hint: str | None = Field(default=None, max_length=2000)
 
@@ -150,6 +171,100 @@ class CaptureProposalRequest(StrictModel):
     proposal: NoteProposal
 
 
+VoiceIntent = Literal[
+    "create_note", "create_task", "capture_only", "move_item", "complete_task", "reopen_task", "archive_item", "unsupported", "ambiguous"
+]
+VoiceFlag = Literal["multi_intent", "self_correction", "unclear_audio", "requested_delete", "unsupported_request"]
+
+
+class VoiceSlots(StrictModel):
+    """Spoken-form slots only. No IDs, ISO dates, offsets, timezones, or verdicts exist here by design."""
+
+    intent: VoiceIntent
+    title: str | None = Field(default=None, max_length=500)
+    content: str | None = Field(default=None, max_length=20_000)
+    destination_phrase: str | None = Field(default=None, max_length=500)
+    target_phrase: str | None = Field(default=None, max_length=500)
+    date_phrase: str | None = Field(default=None, max_length=200)
+    time_phrase: str | None = Field(default=None, max_length=200)
+    flags: list[VoiceFlag] = Field(default_factory=list, max_length=5)
+    reason: str | None = Field(default=None, max_length=300)
+
+
+class VoiceStt(StrictModel):
+    stt_model_id: str | None = Field(default=None, max_length=200)
+    language: str | None = Field(default=None, max_length=32)
+    duration_ms: int | None = Field(default=None, ge=0, le=3_600_000)
+
+
+class VoiceProposalRequest(StrictModel):
+    expected_version: int = Field(ge=1)
+    expected_generation: int = Field(ge=1)
+    lease_token: uuid.UUID
+    slots: VoiceSlots
+    model_confidence: Literal["high", "medium", "low"] | None = None
+    stt: VoiceStt | None = None
+
+
+class TranscriptCheckpointRequest(StrictModel):
+    expected_generation: int = Field(ge=1)
+    lease_token: uuid.UUID
+    transcript: str | None = Field(default=None, max_length=20_000)
+    language: str | None = Field(default=None, max_length=32)
+    stt_model_id: str | None = Field(default=None, max_length=200)
+    duration_ms: int | None = Field(default=None, ge=0, le=3_600_000)
+    no_speech: bool = False
+
+    @model_validator(mode="after")
+    def transcript_matches_flag(self):
+        if self.no_speech and self.transcript:
+            raise ValueError("no_speech checkpoints carry no transcript")
+        if not self.no_speech and not (self.transcript and self.transcript.strip()):
+            raise ValueError("a transcript is required unless no_speech is true")
+        return self
+
+
+class ClaimNextRequest(StrictModel):
+    lease_seconds: int = Field(default=300, ge=30, le=900)
+
+
+VoiceQueryKind = Literal["all_tasks", "overdue_tasks", "inbox_summary", "search", "navigate", "list_contents"]
+
+
+class ResolveQueryRequest(StrictModel):
+    """`kind`/`phrase` are the processor's Qwen classification. Omitted, the backend falls back to its lexicon."""
+
+    expected_generation: int = Field(ge=1)
+    lease_token: uuid.UUID
+    kind: VoiceQueryKind | None = None
+    phrase: str | None = Field(default=None, max_length=500)
+
+
+class ProposalDestinationOverride(StrictModel):
+    kind: Literal["category", "project", "folder"]
+    id: uuid.UUID
+    version: int | None = Field(default=None, ge=1)
+
+
+class ProposalOverrides(StrictModel):
+    """Edits made on the review card. Only fields that are explicitly set are applied."""
+
+    item_type: Literal["note", "task"] | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    content_md: str | None = Field(default=None, max_length=2_000_000)
+    due_date: date | None = None
+    due_time: time | None = None
+    due_timezone: str | None = None
+    destination: ProposalDestinationOverride | None = None
+
+
+class ProposalAcceptRequest(StrictModel):
+    expected_version: int = Field(ge=1)
+    expected_generation: int = Field(ge=1)
+    overrides: ProposalOverrides | None = None
+    confirm_overdue: bool = False
+
+
 class CreateInterpretationItem(StrictModel):
     kind: Literal["create"] = "create"
     item: ItemCreate
@@ -219,6 +334,7 @@ class ProcessingOut(BaseModel):
     transcript: str | None
     proposal: dict | None
     proposed_at: datetime | None
+    query_result: dict | None
     error_code: str | None
     error_message: str | None
     attempt_count: int

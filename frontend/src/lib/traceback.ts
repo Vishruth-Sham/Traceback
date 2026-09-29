@@ -9,6 +9,7 @@ import {
   Page,
   Revision,
   Source,
+  VoiceEntryPoint,
 } from "./types";
 
 export const CATEGORY_SLUGS = [
@@ -211,9 +212,11 @@ export interface CreateCaptureInput {
   source_timezone?: string;
   timestamp_origin?: "user_supplied" | "client_supplied" | "source_metadata" | "unknown";
   metadata?: {
-    processing_profile?: "general" | "task_quick_add" | "note_quick_add";
+    processing_profile?: "general" | "task_quick_add" | "note_quick_add" | "voice_command";
     supplied_title?: string;
     placement_hint?: string;
+    entry_point?: VoiceEntryPoint;
+    allowed_intents?: ("create_note" | "create_task")[];
   };
 }
 

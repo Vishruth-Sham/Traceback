@@ -1,21 +1,21 @@
 # Traceback — First Local Backend Plan
 
-Date: 2026-09-12  
-Status: Core schema/REST plus capture, attachment, provenance, manual interpretation, durable processing state, the bounded local processor, a local stdio MCP adapter, and filesystem-style nested folders are implemented (2026-09-14), with PostgreSQL-backed tests. This document remains the broader specification; [backend-api.md](backend-api.md) records the implemented REST subset, [mcp-adapter.md](mcp-adapter.md) records the implemented MCP tool catalog, [folder-hierarchy-backend-spec.md](folder-hierarchy-backend-spec.md) records the folder design, and [local-development.md](local-development.md) records startup.
+Originally drafted: 2026-09-12; reconciled: 2026-09-26
+Status: The local backend foundation is implemented through migration `20260915_0006` and commit `916d557`, including reviewed note quick add. This remains the broader specification and roadmap. [current-status.md](current-status.md) is the concise implementation boundary; [backend-api.md](backend-api.md) records the implemented REST contract, [mcp-adapter.md](mcp-adapter.md) the MCP catalog, [folder-hierarchy-backend-spec.md](folder-hierarchy-backend-spec.md) folder behavior, and [local-development.md](local-development.md) startup.
 
-This document is the current backend plan. Latest user decisions take precedence over the original handoffs and earlier UI mockups. Detailed schema and API choices below are proposals for implementation, not claims that they already exist.
+Latest user decisions take precedence over the original handoffs and earlier UI mockups. Sections describing the shipped foundation are implemented; future item types, automatic Inbox aging, reminders, hosted operation, and personal memory remain proposals. Where wording conflicts, the implemented API contract and current-status page take precedence.
 
 ## Confirmed scope
 
 - One user/admin, on their PC. Local first; hosted deployment comes later.
 - Local PostgreSQL, local attachment storage, a REST API, and local MCP access. Supabase is a later hosting option, not a first-version dependency.
-- Capture processing uses local whisper.cpp with Whisper small plus Ollama `qwen3.5:4b` Q4_K_M on the user's base M5 MacBook Air. These runtimes were installed and smoke-tested on-device; representative personal-content quality remains unbenchmarked. See `docs/local-models.md`.
+- Capture processing can use local whisper.cpp with Whisper small plus Ollama `qwen3.5:4b` Q4_K_M on the user's base M5 MacBook Air. These runtimes were installed and smoke-tested on-device; representative personal-content quality remains unbenchmarked, and voice/STT is not the immediate development priority. See `docs/local-models.md`.
 - One canonical item ID across category/project pages, Tasks, REST, and MCP.
 - Manual control is mandatory for every implemented content type and its user-editable fields. REST must support direct creation, editing, organization, relationships, completion, and archive/deletion without requiring an AI interpretation or MCP client.
 - Tasks is the only task view. No Today page, Today endpoint, or planned-date field.
 - One optional due date: “do tomorrow” and “finish by tomorrow” mean the same thing.
 - Open tasks sort by due date, overdue first, then upcoming, then undated. Completed tasks have their own filter.
-- Unclassified items go to Inbox, can be moved manually, and eventually move to Other after inactivity. The interval is not yet chosen.
+- Unclassified items go to Inbox and can be moved manually. Automatic movement to Other is disabled until an inactivity interval is explicitly chosen.
 - Archive first, permanent deletion from Archive. Task completion and archiving are separate operations.
 - Keep Skills as the user's admin surface and record of desired capabilities. Its existence does not require every skill to be implemented in the first backend slice.
 

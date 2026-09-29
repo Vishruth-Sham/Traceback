@@ -172,12 +172,12 @@ def ready(session: SessionDep) -> dict[str, str]:
         revision = session.scalar(text("SELECT version_num FROM alembic_version"))
     except SQLAlchemyError as exc:
         raise DomainError("schema_not_ready", "PostgreSQL migrations have not been applied", 503) from exc
-    if revision != "20260915_0006":
+    if revision != "20260916_0007":
         raise DomainError(
             "schema_not_ready",
             "PostgreSQL migrations are not current",
             503,
-            {"expected_revision": "20260915_0006", "actual_revision": revision},
+            {"expected_revision": "20260916_0007", "actual_revision": revision},
         )
     return {"status": "ready"}
 

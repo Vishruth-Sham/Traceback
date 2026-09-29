@@ -51,6 +51,7 @@ class CaptureProcessing(Base):
     transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     proposal: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     proposed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    query_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     attempt_count: Mapped[int] = mapped_column(Integer, default=0)

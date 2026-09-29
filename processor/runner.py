@@ -30,9 +30,16 @@ from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from processor.config import ProcessorSettings, get_settings
-from processor.errors import InterpretationError, ModelUnavailableError, ProcessorError, TranscriptionError
+from processor.errors import (
+    InterpretationError,
+    LegacyAudioRequiresReview,
+    ModelUnavailableError,
+    ProcessorError,
+    TranscriptionError,
+)
 from processor.interpretation import interpret, interpret_note_location
 from processor.transcription import transcribe
+from processor.voice import process_voice_capture
 
 logger = logging.getLogger("processor.runner")
 
@@ -148,6 +155,68 @@ class RestClient:
             cursor = result.get("next_cursor")
             if not cursor:
                 return items
+
+    def capabilities(self) -> dict:
+        return self._request("GET", "/api/v1/capabilities")
+
+    def claim_next(self, *, lease_seconds: int) -> dict | None:
+        """Backend-owned queue choice (aging + bounded voice preference). None means idle (HTTP 204)."""
+        return self._request("POST", "/api/v1/captures/claim-next", json_body={"lease_seconds": lease_seconds})
+
+    def checkpoint_transcript(
+        self,
+        capture_id: str,
+        *,
+        expected_generation: int,
+        lease_token: str,
+        transcript: str | None,
+        no_speech: bool = False,
+        language: str | None = None,
+        stt_model_id: str | None = None,
+        duration_ms: int | None = None,
+    ) -> dict:
+        body: dict[str, Any] = {"expected_generation": expected_generation, "lease_token": lease_token, "no_speech": no_speech}
+        if transcript is not None:
+            body["transcript"] = transcript
+        for key, value in (("language", language), ("stt_model_id", stt_model_id), ("duration_ms", duration_ms)):
+            if value is not None:
+                body[key] = value
+        return self._request("POST", f"/api/v1/captures/{capture_id}/transcript", json_body=body)
+
+    def resolve_query(
+        self, capture_id: str, *, expected_generation: int, lease_token: str, kind: str | None = None, phrase: str | None = None
+    ) -> dict:
+        """Ask the backend to run the read-only query Qwen classified (`kind`, `phrase`).
+        `is_query` is false (and the capture untouched) when there is nothing to resolve."""
+        body: dict[str, Any] = {"expected_generation": expected_generation, "lease_token": lease_token}
+        if kind is not None:
+            body["kind"] = kind
+            body["phrase"] = phrase
+        return self._request("POST", f"/api/v1/captures/{capture_id}/resolve-query", json_body=body)
+
+    def submit_voice_proposal(
+        self,
+        capture_id: str,
+        *,
+        expected_version: int,
+        expected_generation: int,
+        lease_token: str,
+        slots: dict,
+        model_confidence: str | None,
+        stt: dict | None,
+    ) -> dict:
+        """Submit spoken-form slots only. The backend rejects (422) any other field."""
+        body: dict[str, Any] = {
+            "expected_version": expected_version,
+            "expected_generation": expected_generation,
+            "lease_token": lease_token,
+            "slots": slots,
+        }
+        if model_confidence is not None:
+            body["model_confidence"] = model_confidence
+        if stt:
+            body["stt"] = stt
+        return self._request("POST", f"/api/v1/captures/{capture_id}/proposal", json_body=body)
 
     def list_pending_captures(self, limit: int = 1) -> list[dict]:
         result = self._request("GET", f"/api/v1/captures?state=pending&limit={limit}")
@@ -288,43 +357,30 @@ def _best_effort_fail(
         logger.warning("capture %s: could not report failure (%s): %s", capture_id, error_code, exc)
 
 
-def run_once(*, rest: RestClient, config: RunnerConfig, processor_settings: ProcessorSettings | None = None) -> dict[str, Any] | None:
-    """Process at most one pending capture. Returns a small status dict, or None if idle."""
-    processor_settings = processor_settings or get_settings()
+def _error_code(exc: Exception) -> str:
+    return getattr(exc, "error_code", None) or type(exc).__name__
 
-    pending = rest.list_pending_captures(limit=1)
-    if not pending:
-        logger.info("no pending captures")
-        return None
 
-    summary = pending[0]
-    capture_id = summary["id"]
-    categories = rest.list_categories()
-    projects = rest.list_projects()
-    folders = rest.list_folders()
-
-    try:
-        claim = rest.claim_capture(
-            capture_id, expected_generation=summary["processing"]["generation"], lease_seconds=config.lease_seconds
-        )
-    except RestError as exc:
-        logger.info("capture %s: could not claim (%s)", capture_id, exc)
-        return {"capture_id": capture_id, "status": "claim_conflict"}
-    except ModelUnavailableError as exc:
-        # No lease was ever acquired, so the capture is untouched (still
-        # "pending"); report a clean status instead of letting this escape
-        # main() as an unhandled crash.
-        logger.warning("capture %s: backend unavailable during claim (%s)", capture_id, exc)
-        return {"capture_id": capture_id, "status": "backend_unavailable"}
-
-    lease_token = str(claim["lease_token"])
-    generation = claim["generation"]
-    lease_expires_at = claim["lease_expires_at"]
+def _process_claimed(
+    *,
+    rest: RestClient,
+    processor_settings: ProcessorSettings,
+    capture_id: str,
+    generation: int,
+    lease_token: str,
+    lease_expires_at: str,
+    catalogs,
+) -> dict[str, Any]:
+    """Interpret one already-claimed capture; any adapter/backend failure becomes a durable `failed` state."""
     transcript: str | None = None
-
     try:
         capture = rest.get_capture(capture_id)
         source_type = capture["source_type"]
+        profile = (capture.get("metadata") or {}).get("processing_profile", "general")
+        if profile == "voice_command":
+            return process_voice_capture(
+                rest, capture, generation=generation, lease_token=lease_token, settings=processor_settings
+            )
         if source_type == "typed":
             text = capture["raw_text"]
             if not text or not text.strip():
@@ -338,9 +394,13 @@ def run_once(*, rest: RestClient, config: RunnerConfig, processor_settings: Proc
                 rest.download_asset_content(str(asset_ids[0]), audio_path)
                 transcript = transcribe(audio_path, settings=processor_settings)
             text = transcript
+            if profile == "general":
+                # Legacy microphone captures are frozen to review: keep the transcript, never auto-interpret.
+                raise LegacyAudioRequiresReview("audio captures are saved for review; use the voice command mic")
         else:
             raise ProcessorError(f"unsupported source_type for processor runner: {source_type}")
 
+        categories, projects, folders = catalogs()
         context = _proposal_context(capture, categories, projects, folders)
         if context["processing_profile"] == "note_quick_add":
             locations = rest.list_locations()
@@ -379,7 +439,7 @@ def run_once(*, rest: RestClient, config: RunnerConfig, processor_settings: Proc
         return {"capture_id": capture_id, "status": "interpreted", "item_count": len(items)}
 
     except (TranscriptionError, ModelUnavailableError, InterpretationError, ProcessorError, RestError) as exc:
-        error_code = type(exc).__name__
+        error_code = _error_code(exc)
         logger.error("capture %s: processing failed (%s)", capture_id, error_code)
         _best_effort_fail(
             rest,
@@ -392,6 +452,83 @@ def run_once(*, rest: RestClient, config: RunnerConfig, processor_settings: Proc
             transcript=transcript,
         )
         return {"capture_id": capture_id, "status": "failed", "error_code": error_code}
+
+
+def _claim_from_queue(rest: RestClient, config: RunnerConfig) -> dict[str, Any] | None | str:
+    """Ask the backend for the next capture. Returns the claim, None (idle), a status dict, or "legacy"."""
+    claim_next = getattr(rest, "claim_next", None)
+    if claim_next is None:
+        return "legacy"
+    try:
+        return claim_next(lease_seconds=config.lease_seconds)
+    except RestError as exc:
+        if exc.status in (404, 405):
+            return "legacy"  # older backend without claim-next
+        logger.info("claim-next failed (%s)", exc)
+        return {"status": "claim_conflict"}
+    except ModelUnavailableError as exc:
+        logger.warning("backend unavailable during claim-next (%s)", exc)
+        return {"status": "backend_unavailable"}
+
+
+def run_once(*, rest: RestClient, config: RunnerConfig, processor_settings: ProcessorSettings | None = None) -> dict[str, Any] | None:
+    """Process at most one capture. Returns a small status dict, or None if idle."""
+    processor_settings = processor_settings or get_settings()
+
+    claim = _claim_from_queue(rest, config)
+    if claim is None:
+        logger.info("no pending captures")
+        return None
+    if isinstance(claim, dict):
+        if "lease_token" in claim:
+            def catalogs():
+                return rest.list_categories(), rest.list_projects(), rest.list_folders()
+
+            return _process_claimed(
+                rest=rest,
+                processor_settings=processor_settings,
+                capture_id=str(claim["capture_id"]),
+                generation=claim["generation"],
+                lease_token=str(claim["lease_token"]),
+                lease_expires_at=claim["lease_expires_at"],
+                catalogs=catalogs,
+            )
+        return claim
+
+    pending = rest.list_pending_captures(limit=1)
+    if not pending:
+        logger.info("no pending captures")
+        return None
+
+    summary = pending[0]
+    capture_id = summary["id"]
+    categories = rest.list_categories()
+    projects = rest.list_projects()
+    folders = rest.list_folders()
+
+    try:
+        claim = rest.claim_capture(
+            capture_id, expected_generation=summary["processing"]["generation"], lease_seconds=config.lease_seconds
+        )
+    except RestError as exc:
+        logger.info("capture %s: could not claim (%s)", capture_id, exc)
+        return {"capture_id": capture_id, "status": "claim_conflict"}
+    except ModelUnavailableError as exc:
+        # No lease was ever acquired, so the capture is untouched (still
+        # "pending"); report a clean status instead of letting this escape
+        # main() as an unhandled crash.
+        logger.warning("capture %s: backend unavailable during claim (%s)", capture_id, exc)
+        return {"capture_id": capture_id, "status": "backend_unavailable"}
+
+    return _process_claimed(
+        rest=rest,
+        processor_settings=processor_settings,
+        capture_id=capture_id,
+        generation=claim["generation"],
+        lease_token=str(claim["lease_token"]),
+        lease_expires_at=claim["lease_expires_at"],
+        catalogs=lambda: (categories, projects, folders),
+    )
 
 
 def main() -> int:

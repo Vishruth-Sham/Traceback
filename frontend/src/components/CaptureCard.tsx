@@ -5,6 +5,7 @@ import { Archive as ArchiveIcon, RotateCcw } from "lucide-react";
 import { Capture, ApiError } from "@/lib/types";
 import { archiveCapture, retryCapture } from "@/lib/traceback";
 import { useToast } from "./Toast";
+import { CommandReviewCard } from "./voice/CommandReviewCard";
 
 const sourceLabel: Record<string, string> = {
   typed: "typed",
@@ -17,6 +18,7 @@ const sourceLabel: Record<string, string> = {
 const stateLabel: Record<string, string> = {
   pending: "saved — awaiting processing",
   processing: "organizing…",
+  awaiting_review: "needs review",
   failed: "processing failed — original is safe",
   resolved: "organized",
 };
@@ -24,6 +26,14 @@ const stateLabel: Record<string, string> = {
 export function CaptureCard({ capture, onChanged }: { capture: Capture; onChanged: () => void }) {
   const toast = useToast();
   const preview = capture.raw_text || capture.original_description || capture.original_url || "(audio/file capture)";
+  if (capture.metadata?.processing_profile === "voice_command") {
+    // Voice commands share one review surface with the global tray; nothing is applied until the user acts.
+    return (
+      <div className="border-b border-hairline py-3">
+        <CommandReviewCard capture={capture} variant="inbox" onChanged={onChanged} />
+      </div>
+    );
+  }
 
   async function retry() {
     try {

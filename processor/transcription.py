@@ -11,7 +11,7 @@ import subprocess
 from pathlib import Path
 
 from processor.config import ProcessorSettings, get_settings
-from processor.errors import ModelUnavailableError, TranscriptionError
+from processor.errors import ModelUnavailableError, NoSpeechError, TranscriptionError
 
 
 def transcribe(audio_path: Path, *, settings: ProcessorSettings | None = None) -> str:
@@ -70,5 +70,5 @@ def transcribe(audio_path: Path, *, settings: ProcessorSettings | None = None) -
 
     transcript = result.stdout.strip()
     if not transcript:
-        raise TranscriptionError(f"whisper.cpp produced an empty transcript for {audio_path}")
+        raise NoSpeechError(f"whisper.cpp produced an empty transcript for {audio_path}")
     return transcript
