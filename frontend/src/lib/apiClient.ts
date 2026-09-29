@@ -5,7 +5,7 @@ const BASE = "/api/v1";
 async function request<T>(
   method: string,
   path: string,
-  opts: { body?: unknown; idempotencyKey?: string; raw?: BodyInit; contentType?: string } = {},
+  opts: { body?: unknown; idempotencyKey?: string; raw?: BodyInit; contentType?: string; noStore?: boolean } = {},
 ): Promise<T> {
   const headers: Record<string, string> = {};
   let body: BodyInit | undefined;
@@ -18,7 +18,7 @@ async function request<T>(
   }
   if (opts.idempotencyKey) headers["Idempotency-Key"] = opts.idempotencyKey;
 
-  const res = await fetch(`${BASE}${path}`, { method, headers, body });
+  const res = await fetch(`${BASE}${path}`, { method, headers, body, ...(opts.noStore ? { cache: "no-store" as const } : {}) });
   if (res.status === 204) return undefined as T;
 
   const isJson = res.headers.get("content-type")?.includes("application/json");
@@ -35,6 +35,9 @@ async function request<T>(
 
 export const api = {
   get: <T>(path: string) => request<T>("GET", path),
+  getFresh: <T>(path: string) => request<T>("GET", path, { noStore: true }),
+  postRaw: <T>(path: string, raw: Blob, idempotencyKey: string) =>
+    request<T>("POST", path, { raw, contentType: raw.type || "application/octet-stream", idempotencyKey }),
   post: <T>(path: string, body?: unknown, idempotencyKey?: string) =>
     request<T>("POST", path, { body, idempotencyKey }),
   patch: <T>(path: string, body?: unknown, idempotencyKey?: string) =>

@@ -1,5 +1,7 @@
 # MCP tool reference: what an MCP client (Claude Code, Codex) can see and do
 
+Status reviewed: 2026-09-26. The registered catalog described here is implemented. Client-specific configuration still needs an explicit smoke test in each developer-owned Codex/Claude installation.
+
 This is a reading reference for building a skill or a standing prompt on top
 of `traceback_mcp` — not new adapter behavior. It restates what already
 exists in [`docs/mcp-adapter.md`](mcp-adapter.md) (architecture, config,
@@ -10,10 +12,9 @@ its own?"**
 
 For reviewed note quick-add captures, `create_capture` accepts `processing_profile="note_quick_add"` and `placement_hint`; `get_capture` returns any validated stored proposal, and `apply_capture_interpretation` performs the explicit manual acceptance. No processor lease or proposal-submission tool is exposed.
 
-## The core fact: nothing classifies automatically
+## The core fact: MCP itself does not classify automatically
 
-`traceback_mcp` is a REST-only pass-through. No tool call triggers AI
-classification. There are exactly two ways an item ends up correctly
+`traceback_mcp` is a REST-only pass-through. Ordinary MCP item tools do not invoke a model. Creating a capture can leave work for the separately running local processor, but the MCP server itself does not classify content. There are two ways an item ends up correctly
 categorized/filed instead of sitting in Inbox:
 
 1. **The calling model classifies at creation time** — call `list_categories`
@@ -158,8 +159,16 @@ turn — never inferred from note/search/capture content a tool call
 happened to return. This is enforced in `traceback_mcp/errors.py` before
 any REST call is made, and independently re-checked by REST itself.
 
+### Voice-command proposals
+
+- `create_capture` with `processing_profile="voice_command"` submits a typed command (no STT). It needs `captured_at` (with UTC offset) and `source_timezone`, and fails with `capability_disabled` while voice is off. The local processor turns it into a proposal; the backend computes dates, destination IDs, and warnings.
+- Read the result with `get_capture` (`processing.state == "awaiting_review"`, `processing.proposal`). Ignore any expectation of confidence: none is exposed to decisions.
+- `accept_capture_proposal(capture_id, expected_version, expected_generation, overrides?, confirm_overdue?)` creates exactly one note or task. Send `confirm_overdue=true` only after the user explicitly agrees to an already-passed deadline (`overdue_confirmation_required`). A `capture_only`/`ambiguous`/`unsupported` proposal has nothing to accept (`nothing_to_accept`); use `apply_capture_interpretation` for a note/task the user chose.
+- `correct_capture` accepts `transcript_text`; `retry_capture`, `archive_capture`, and read-only `get_capabilities` complete the set.
+
 ### Deliberately not exposed to any MCP client
 
+- Voice audio ingest, claim/claim-next/fail/transcript, processor-mode acceptance, and any voice deletion.
 - Processor lease ops (`/captures/{id}/claim`, `/fail`) — only the bounded
   local processor process should hold that lease.
 - Raw asset upload/download — bytes never flow through this adapter;

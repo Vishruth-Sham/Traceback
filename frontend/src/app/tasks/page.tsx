@@ -74,7 +74,6 @@ function TasksPageInner() {
       />
 
       {filter === "open" && <TaskQuickAdd onTaskCreated={() => mutate()} />}
-
       {isLoading && <LoadingState label="Loading tasks…" />}
       {error && <ErrorState message="Could not load tasks." onRetry={() => mutate()} />}
 

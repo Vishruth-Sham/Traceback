@@ -1,12 +1,12 @@
 # Traceback — First Local UI Plan
 
-Date: 2026-09-12 (Tasks free-text add updated 2026-09-14)
-Status: Largely implemented in `frontend/`; see [README.md](../README.md) and [backend-api.md](backend-api.md) for what actually exists today. This document remains the broader behavioral spec; sections below note where implementation matches or has not yet reached the plan. Existing Claude-generated HTML remains a design reference, not the implemented application.
+Originally drafted: 2026-09-12; reconciled: 2026-09-26
+Status: The core desktop UI, task quick add, and reviewed note quick add are implemented in `frontend/`. See [current status](current-status.md), [README.md](../README.md), and [backend-api.md](backend-api.md) for what exists today. This document remains the broader behavioral specification. Claude-generated HTML remains reference material, not the running application.
 Backend contract: [Local backend plan](backend-plan.md)
 
 The desktop UI now includes `/notes/quick-add`: compose and persist the exact note, review a local-Qwen placement proposal, or search/create/select a canonical destination manually before atomic save. `/notes/new` remains the model-free path. Current labels use Other and never Today.
 
-Design references: [Modern minimal UI export](../initial%20UI%20views/Modern%20minimal%20UI%20design/Traceback%20Main%20Page%20%28standalone%29.html) and [earlier standalone mockups](../initial%20UI%20views/Traceback%20Main%20Page%20%28standalone%29.html). The modern export was discovered during planning; inspect it before implementing visual details. This plan defines behavior and does not claim a visual review of that newer export.
+Design references: [Modern minimal UI export](../initial%20UI%20views/Modern%20minimal%20UI%20design/Traceback%20Main%20Page%20%28standalone%29.html) and [earlier standalone mockups](../initial%20UI%20views/Traceback%20Main%20Page%20%28standalone%29.html). The modern export was rendered and compared during the implemented design QA recorded in [design-qa.md](../design-qa.md). Future visual changes should preserve that direction rather than initiate a broad redesign.
 
 ## Scope and visual direction
 
@@ -122,6 +122,8 @@ Archive has separate item/capture filters. Restore keeps the same ID and complet
 Permanent deletion is available only in Archive, with confirmation identifying the object. Explain that deleting an interpreted item preserves shared originals. For captures still referenced by items, show the dependency and block deletion according to the API. Report media cleanup pending if physical removal is still retrying; do not promise backups are erased.
 
 ## Skills admin page
+
+Implemented voice UI (see [features/voice-commands.md](features/voice-commands.md)): one shared recorder provider mounted in the root layout, a global voice panel for recording or typing a command, and a single review card shared by a top-right tray and Inbox. The panel follows `/capabilities`; the Skills entry for Voice commands does too.
 
 Keep the page and the existing capability ideas, including voice-to-note, receipt extraction, link summaries, and weekly digest. Label each honestly as Planned, Available, or Disabled according to implementation/configuration. Planned capabilities remain visible so they are not forgotten.
 

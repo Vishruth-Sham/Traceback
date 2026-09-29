@@ -1,6 +1,6 @@
 # Backend spec: nested folders (filesystem-style, unlimited depth)
 
-Status: implemented and hardened (2026-09-14), migrations `20260915_0004` and `20260915_0005`. Each item has at most one outgoing `part_of` parent (enforced by PostgreSQL); `/move` replaces that parent, direct relation creation rejects a second parent, folder placement propagates to descendants, and active children of an archived container surface at the category root. `POST /items` also accepts a project/folder plus its expected version for atomic create-in-container. See [backend-api.md](backend-api.md) for the current REST wording and [mcp-adapter.md](mcp-adapter.md) for the MCP tool catalog.
+Status: implemented and hardened; reviewed 2026-09-26. Migrations `20260915_0004` and `20260915_0005` provide the folder and single-parent changes; schema head is now `20260915_0006` because note quick add followed them. Each item has at most one outgoing `part_of` parent (enforced by PostgreSQL); `/move` replaces that parent, direct relation creation rejects a second parent, folder placement propagates to descendants, and active children of an archived container surface at the category root. `POST /items` also accepts a project/folder plus its expected version for atomic create-in-container. See [backend-api.md](backend-api.md) for the current REST wording and [mcp-adapter.md](mcp-adapter.md) for the MCP tool catalog.
 
 ## Why
 

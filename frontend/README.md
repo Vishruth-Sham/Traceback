@@ -1,36 +1,52 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Traceback desktop UI
 
-## Getting Started
+The `frontend/` package is Traceback's desktop-only Next.js interface. It is not a standalone hosted product: it proxies same-origin `/api/v1/*` requests to the local FastAPI backend and attaches the API bearer token on the server, keeping that token out of browser JavaScript.
 
-First, run the development server:
+Implemented screens include Tasks, Inbox, all six fixed categories, projects and nested folders, note detail/editing, manual and quick note creation, search, Archive, Skills, and task creation. `/` opens Tasks. There is no Today page or mobile implementation.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+## Configuration
+
+The FastAPI backend must already be running. Copy the committed placeholder and replace its token with the value from the repository-root `.env`:
+
+```sh
+cp .env.local.example .env.local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+The resulting ignored `frontend/.env.local` contains:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```dotenv
+TRACEBACK_API_BASE_URL=http://127.0.0.1:8000
+TRACEBACK_API_TOKEN=<same value as the repository-root .env>
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Never expose the token through a `NEXT_PUBLIC_*` variable and never commit `.env.local`.
 
-## Learn More
+## Development
 
-To learn more about Next.js, take a look at the following resources:
+```sh
+npm install
+npm run dev
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Open `http://localhost:3000`. Use `localhost`, rather than `127.0.0.1`, for the development UI because Next.js development-origin handling can otherwise block its own assets.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+The optional local processor is a separate Python service. Manual UI operations work without it. Task quick add and AI-assisted note placement remain saved and show recoverable states when processing is unavailable.
 
-## Deploy on Vercel
+## Checks
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```sh
+npm test -- --run
+npm run typecheck
+npm run lint
+npm run build -- --webpack
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+The final verified baseline at commit `916d557` was 29 frontend tests passing, with type checking, lint, and the webpack production build passing. See [the repository validation record](../docs/backend-validation.md) for the full backend/frontend baseline.
+
+## Relevant documentation
+
+- [Current project status](../docs/current-status.md)
+- [Local stack startup](../docs/local-development.md)
+- [UI behavior and product decisions](../docs/ui-plan.md)
+- [Frontend design QA](../design-qa.md)
+- [Implemented REST API](../docs/backend-api.md)

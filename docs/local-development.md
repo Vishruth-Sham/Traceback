@@ -1,5 +1,7 @@
 # Local development on macOS
 
+Status reviewed: 2026-09-26. These commands operate the implemented local stack at schema head `20260915_0006`. The local database and assets persist when services stop.
+
 Traceback uses Python and PostgreSQL directly on the Mac. Manual REST/MCP/UI operations do not require Docker, Supabase, Whisper, or Ollama. Audio processing and AI-organized typed captures (including Tasks free-text quick add) require the optional local Whisper/Ollama processor. The PostgreSQL cluster belongs to this checkout and binds to `127.0.0.1:55432`; it is independent of Homebrew services.
 
 ## Prerequisites and first start
@@ -38,7 +40,28 @@ python scripts/local_db.py stop
 python scripts/local_db.py status
 ```
 
+If the background capture processor is running, stop it before PostgreSQL:
+
+```sh
+python scripts/processor_service.py stop
+```
+
+Stop the frontend with Ctrl-C in its terminal. The standard local ports are frontend `3000`, API `8000`, and PostgreSQL `55432`. Ollama is installed independently and is not managed by Traceback's lifecycle scripts.
+
 `status` exits nonzero when the database is stopped. `start` is safe when this cluster is already running and verifies an authenticated connection. Data survives stopping the API, PostgreSQL, and the machine. Migrations must succeed before using API routes. Consult the README for the implemented health endpoints and API examples.
+
+## Voice commands (opt-in, review-first)
+
+Voice is off until you enable it. Prerequisites beyond the base setup: local `ffmpeg` (`brew install ffmpeg`; the processor normalizes recordings with it) plus the existing whisper.cpp and Ollama setup from [local-models.md](local-models.md). Take a [verified backup](#backup-and-verified-restore) first.
+
+```sh
+# repo-root .env
+TRACEBACK_VOICE_COMMANDS_ENABLED=true
+# frontend/.env.local (optional; must be >= the backend cap)
+# TRACEBACK_VOICE_MAX_UPLOAD_BYTES=10485760
+```
+
+Restart the API (Ctrl-C, then the `uvicorn` command above), then start the processor (`python scripts/processor_service.py start`). The global voice panel follows `GET /api/v1/capabilities`; nothing else needs restarting. To roll back, set the flag to `false` and restart the API; see [features/voice-commands.md](features/voice-commands.md#turning-it-on-and-off) for exactly what stays available. The tests use throwaway PostgreSQL databases and stubbed models; they never touch this data.
 
 ## Frontend (desktop web UI)
 
@@ -91,7 +114,7 @@ python scripts/local_db.py restore /tmp/traceback-backup-2026-09-14 \
   --assets /tmp/traceback-restored-assets-2026-09-14
 ```
 
-Use a new destination each time. Backup refuses an existing destination and destinations inside `.local/traceback`. It saves `database.dump` in PostgreSQL custom format, an `assets/` copy, and `manifest.json` containing public-table row counts and file SHA-256 checksums. The assets directory is reserved for future attachment implementation; backing it up does not imply attachment endpoints are implemented. Credentials and `.env` are deliberately excluded. Keep backups private and copy important backups to durable storage; `/tmp` is only a convenient verification example.
+Use a new destination each time. Backup refuses an existing destination and destinations inside `.local/traceback`. It saves `database.dump` in PostgreSQL custom format, an `assets/` copy, and `manifest.json` containing public-table row counts and file SHA-256 checksums. The assets directory contains implemented local attachment bytes and is part of a complete Traceback backup. Credentials and `.env` are deliberately excluded. Keep backups private and copy important backups to durable storage; `/tmp` is only a convenient verification example.
 
 Restore requires a new database name and a new asset directory. It refuses the live database, test database, and PostgreSQL system databases. It verifies copied asset checksums and every public-table row count against the manifest. This proves that the dump restores and that the recorded counts and files match; it does not replace API integration tests or a full comparison of every database value. Failed restores retain their new database/files for inspection and never remove live data. A backup without a manifest is incomplete.
 

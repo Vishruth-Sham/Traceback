@@ -37,6 +37,8 @@ class SchedulerConfig(RunnerConfig):
     """`RunnerConfig` plus the one extra knob the scheduler needs."""
 
     poll_interval_s: float = Field(default=15.0, ge=1, le=3600)
+    # Used instead while the backend reports voice commands enabled, so a spoken command is picked up promptly.
+    voice_poll_interval_s: float = Field(default=3.0, ge=1, le=3600)
 
 
 class StopSignal:
@@ -56,6 +58,18 @@ class StopSignal:
 
     def __call__(self) -> bool:
         return self.requested
+
+
+def next_interval(rest: RestClient, config: SchedulerConfig) -> float:
+    """3 s while voice commands are enabled, else the idle interval; any failure keeps the safe default."""
+    capabilities = getattr(rest, "capabilities", None)
+    if capabilities is None:
+        return config.poll_interval_s
+    try:
+        enabled = bool(capabilities()["voice_commands"]["enabled"])
+    except Exception:  # noqa: BLE001 - polling cadence must never take the scheduler down
+        return config.poll_interval_s
+    return min(config.poll_interval_s, config.voice_poll_interval_s) if enabled else config.poll_interval_s
 
 
 def run_forever(
@@ -95,7 +109,7 @@ def run_forever(
             break
         if max_iterations is not None and iterations >= max_iterations:
             break
-        sleep(config.poll_interval_s)
+        sleep(next_interval(rest, config))
     return iterations
 
 

@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/PageHeader";
+import { VoiceSkillCard } from "@/components/voice/VoiceSkillCard";
 
 const SKILLS: {
   name: string;
@@ -13,7 +14,7 @@ const SKILLS: {
   {
     name: "Audio capture",
     status: "Available",
-    description: "Record audio in the browser and save the original file before anything is transcribed.",
+    description: "Record a voice command in the browser. The original audio is saved before anything is transcribed.",
   },
   {
     name: "Local transcription (whisper.cpp)",
@@ -63,6 +64,7 @@ export default function SkillsPage() {
       />
 
       <div className="grid grid-cols-2 gap-px overflow-hidden rounded border border-hairline bg-hairline">
+        <VoiceSkillCard />
         {SKILLS.map((skill) => (
           <div key={skill.name} className="flex flex-col gap-1.5 bg-paper-soft px-4 py-3.5">
             <div className="flex items-start justify-between gap-2">

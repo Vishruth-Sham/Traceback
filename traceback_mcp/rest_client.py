@@ -199,6 +199,14 @@ class RestClient:
             "POST", f"/api/v1/captures/{capture_id}/interpretations", json_body=body, idempotency_key=idempotency_key
         )
 
+    def accept_capture_proposal(self, capture_id: str, body: dict, *, idempotency_key: str | None) -> dict:
+        return self.request(
+            "POST", f"/api/v1/captures/{capture_id}/proposal/accept", json_body=body, idempotency_key=idempotency_key
+        )
+
+    def get_capabilities(self) -> dict:
+        return self.request("GET", "/api/v1/capabilities")
+
     def get_item_sources(self, item_id: str) -> list[dict]:
         return self.request("GET", f"/api/v1/items/{item_id}/sources")
 

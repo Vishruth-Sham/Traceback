@@ -40,6 +40,15 @@ WHISPER_AVAILABLE = bool(shutil.which("whisper-cli")) and get_processor_settings
 SYNTH_AVAILABLE = bool(shutil.which("say")) and bool(shutil.which("afconvert"))
 
 
+from tests.conftest import drain_claimable_captures
+
+
+@pytest.fixture(autouse=True)
+def _empty_queue(request):
+    if "client" in request.fixturenames:
+        drain_claimable_captures(request.getfixturevalue("client"))
+
+
 def _ollama_model_available() -> bool:
     import urllib.request
 
@@ -264,15 +273,9 @@ def _upload_asset(rest_base_url: str, token: str, wav_path: Path) -> str:
         return json.loads(response.read())["id"]
 
 
-def test_audio_capture_through_runner_over_real_http_deterministic(client, live_server, monkeypatch, tmp_path):
+def test_legacy_audio_capture_is_transcribed_and_frozen_to_review_over_real_http(client, live_server, monkeypatch, tmp_path):
     monkeypatch.setattr(runner_module, "transcribe", lambda path, settings=None: "deterministic stub transcript")
-    monkeypatch.setattr(
-        runner_module,
-        "interpret",
-        lambda text, context, settings=None: {
-            "items": [{"item_type": "note", "title": "Audio pipeline note", "content_md": text, "category_id": None, "due_date": None, "due_time": None, "due_timezone": None}]
-        },
-    )
+    monkeypatch.setattr(runner_module, "interpret", lambda *a, **k: pytest.fail("legacy audio must never be auto-interpreted"))
 
     token = "traceback-integration-test-token-only"
     wav_path = tmp_path / "fixture.wav"
@@ -285,14 +288,31 @@ def test_audio_capture_through_runner_over_real_http_deterministic(client, live_
     rest = RestClient(config)
     result = run_once(rest=rest, config=config)
 
-    assert result["status"] == "interpreted"
+    assert result["status"] == "failed"
+    assert result["error_code"] == "legacy_audio_requires_review"
     refreshed = client.get(f"/api/v1/captures/{created['id']}").json()
-    assert refreshed["processing"]["state"] == "resolved"
+    assert refreshed["processing"]["state"] == "failed"
     assert refreshed["processing"]["transcript"] == "deterministic stub transcript"
+    assert refreshed["resulting_item_ids"] == []
     assert refreshed["asset_ids"] == [asset_id]  # original asset link preserved, not consumed
 
-    item = client.get(f"/api/v1/items/{refreshed['resulting_item_ids'][0]}").json()
-    assert item["content_md"] == "deterministic stub transcript"
+
+def test_backend_refuses_processor_mode_interpretation_of_legacy_audio(client, live_server, tmp_path):
+    token = "traceback-integration-test-token-only"
+    wav_path = tmp_path / "fixture.wav"
+    _tiny_deterministic_wav(wav_path)
+    asset_id = _upload_asset(live_server, token, wav_path)
+    created = client.post("/api/v1/captures", json={"source_type": "audio", "asset_ids": [asset_id]}).json()
+    claim = client.post(f"/api/v1/captures/{created['id']}/claim", json={"expected_generation": 1}).json()
+    response = client.post(
+        f"/api/v1/captures/{created['id']}/interpretations",
+        json={
+            "expected_version": created["version"], "expected_generation": 1, "mode": "processor", "lease_token": claim["lease_token"],
+            "items": [{"kind": "create", "item": {"item_type": "note", "title": "x"}}],
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "legacy_audio_requires_review"
 
 
 def test_transcription_failure_is_preserved_then_recovers_on_retry(client, live_server, monkeypatch, tmp_path):
@@ -327,18 +347,13 @@ def test_transcription_failure_is_preserved_then_recovers_on_retry(client, live_
     assert retried.status_code == 200
 
     monkeypatch.setattr(runner_module, "transcribe", lambda path, settings=None: "recovered transcript")
-    monkeypatch.setattr(
-        runner_module,
-        "interpret",
-        lambda text, context, settings=None: {
-            "items": [{"item_type": "note", "title": "Recovered", "content_md": text, "category_id": None, "due_date": None, "due_time": None, "due_timezone": None}]
-        },
-    )
     second = run_once(rest=rest, config=config)
-    assert second["status"] == "interpreted"
-    resolved_capture = client.get(f"/api/v1/captures/{created['id']}").json()
-    assert resolved_capture["processing"]["state"] == "resolved"
-    assert resolved_capture["processing"]["transcript"] == "recovered transcript"
+    # Legacy audio no longer auto-interprets: the retry recovers the transcript and stops for manual review.
+    assert second["status"] == "failed"
+    assert second["error_code"] == "legacy_audio_requires_review"
+    recovered = client.get(f"/api/v1/captures/{created['id']}").json()
+    assert recovered["processing"]["state"] == "failed"
+    assert recovered["processing"]["transcript"] == "recovered transcript"
 
 
 # =====================================================================================
@@ -383,10 +398,8 @@ def test_audio_capture_full_pipeline_with_real_whisper_and_ollama(client, live_s
     rest = RestClient(config)
     result = run_once(rest=rest, config=config)
 
-    assert result["status"] == "interpreted"
+    assert result["status"] == "failed"
+    assert result["error_code"] == "legacy_audio_requires_review"
     refreshed = client.get(f"/api/v1/captures/{created['id']}").json()
-    assert refreshed["processing"]["state"] == "resolved"
-    assert refreshed["processing"]["transcript"]  # non-empty real transcript
-    assert len(refreshed["resulting_item_ids"]) >= 1
-    item = client.get(f"/api/v1/items/{refreshed['resulting_item_ids'][0]}").json()
-    assert item["item_type"] in ("note", "task", "project")
+    assert refreshed["processing"]["state"] == "failed"
+    assert refreshed["processing"]["transcript"]  # non-empty real transcript is preserved for review

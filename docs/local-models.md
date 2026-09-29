@@ -1,4 +1,6 @@
-# Local processor models: transcription and interpretation (2026-09-14)
+# Local processor models: transcription and interpretation
+
+Status reviewed: 2026-09-26. The adapters, bounded REST runner, scheduler, task quick add, and reviewed note-placement proposal path are implemented. The recorded machine/runtime measurements remain historical evidence from 2026-09-14. Representative personal-content quality was not benchmarked, and voice/STT is currently deprioritized rather than treated as the next milestone.
 
 Status: `processor/` implements the two synchronous adapters required by
 [processor-contract.md](processor-contract.md) — `transcribe` (whisper.cpp)
@@ -548,6 +550,10 @@ database exactly as found.
 See "Reproducible latency/memory benchmark" above for the exact command and
 this machine's measured results; that script is the reproducible artifact,
 run again on any machine to get fresh numbers for it.
+
+## Voice command stages (2026-09-26)
+
+Added for the review-first voice feature ([features/voice-commands.md](features/voice-commands.md)); no new model or weights. Each recording is normalized with local `ffmpeg` (`processor/voice.py:normalize_audio`, fixed argv, 30 s timeout, `-t 120` bound, rejects audio over 65 s) before whisper.cpp, because the browser's WebM/Opus or MP4/AAC container was previously passed to `whisper-cli` unnormalized. Qwen (`processor/voice.py:extract_slots`, reusing the loopback Ollama call and bounded retries) returns spoken-form slots only under an `extra="forbid"` schema. Automated tests cover ffmpeg normalization of real WebM/Opus, M4A/AAC and Ogg/Opus clips generated with ffmpeg's synthetic sine source, and a real-HTTP round trip with Whisper and Qwen **stubbed**. **No latency, memory, thermal, or quality measurement of the new chain was made**; the 2026-09-14 numbers above still cover only Whisper and Qwen in isolation.
 
 ## What is not covered here
 

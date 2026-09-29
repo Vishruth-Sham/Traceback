@@ -1,4 +1,6 @@
-# Amnesiarch — v0 Product & Architecture Handoff
+# Historical handoff: Amnesiarch v0 (expanded draft)
+
+> **Historical reference only.** This document predates the Traceback name and current product decisions. Do not treat its Supabase/hosting, navigation, category, mobile, or feature statements as current requirements. Start with [current-status.md](current-status.md), [initial-plan.md](initial-plan.md), [backend-plan.md](backend-plan.md), and [ui-plan.md](ui-plan.md). The old product name below is preserved only to keep the original handoff intact.
 
 ## 1. What Amnesiarch Is
 

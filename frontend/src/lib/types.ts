@@ -68,12 +68,99 @@ export interface NoteProposal {
   generation: number;
 }
 
+export type VoiceIntent = "create_note" | "create_task" | "capture_only" | "ambiguous" | "unsupported";
+export type VoiceEntryPoint = "global" | "tasks" | "notes" | "project" | "folder" | "category" | "inbox" | "mcp_typed";
+
+export interface VoiceDestination {
+  kind: "category" | "project" | "folder";
+  id: string;
+  title: string | null;
+  path: string | null;
+  version: number | null;
+  source: "spoken" | "surface_context" | null;
+}
+
+export interface VoiceOperation {
+  type: "create";
+  item_type: "note" | "task";
+  title: string;
+  content_md: string;
+  due_date: string | null;
+  due_time: string | null;
+  due_timezone: string | null;
+  destination: VoiceDestination | null;
+}
+
+export interface VoiceDateAlternative {
+  due_date: string;
+  due_time: string | null;
+  anchor?: "receipt";
+}
+
+export interface VoiceProposal {
+  kind: "voice_command";
+  schema_version: number;
+  generation: number;
+  proposal_sha256: string;
+  policy_version: number;
+  intent: VoiceIntent;
+  operation: VoiceOperation | null;
+  resolution: {
+    intent: { basis: string | null; lexicon_agrees: boolean; alternative: string | null };
+    anchor: { captured_at: string; received_at: string; skew_s: number; timezone: string; observed_captured_at?: string | null };
+    date: { phrase: string | null; time_phrase: string | null; basis: string | null; default: string | null; alternatives: VoiceDateAlternative[] };
+    destination: {
+      status: "none" | "resolved" | "ambiguous" | "not_found";
+      phrase: string | null;
+      candidates: { kind: string; id: string; title: string; path: string; version: number | null }[];
+    };
+  };
+  warnings: string[];
+  explanation: string;
+  disposition: "review" | "reject" | "auto_apply_eligible";
+  disposition_reasons: string[];
+  // Deliberately absent from the UI: `model_confidence` is stored server-side for offline evaluation only.
+}
+
+export type CaptureProposal = NoteProposal | VoiceProposal;
+
+export function isVoiceProposal(proposal: CaptureProposal | null | undefined): proposal is VoiceProposal {
+  return !!proposal && (proposal as VoiceProposal).kind === "voice_command";
+}
+
+// Mirrors backend/voice_query.py's result shapes exactly (kind discriminates the panel state).
+export interface VoiceQueryMatch {
+  id: string;
+  item_type: ItemType | "page" | "category";
+  title: string;
+  path: string | null;
+  meta: string | null;
+  route: string;
+}
+
+export interface VoiceQueryFooterAction {
+  label: string;
+  route: string;
+}
+
+export interface VoiceQueryResult {
+  kind: "result" | "confirm" | "ambiguous" | "no_results";
+  query_text?: string | null;
+  label?: string | null;
+  note?: string | null;
+  matches?: VoiceQueryMatch[];
+  confirm?: VoiceQueryMatch;
+  footer_action?: VoiceQueryFooterAction | null;
+  numbered?: boolean;
+}
+
 export interface Processing {
   generation: number;
   state: ProcessingState;
   transcript: string | null;
-  proposal?: NoteProposal | null;
+  proposal?: CaptureProposal | null;
   proposed_at?: string | null;
+  query_result?: VoiceQueryResult | null;
   error_code: string | null;
   error_message: string | null;
   attempt_count: number;
@@ -105,6 +192,25 @@ export interface Capture {
   archived_at: string | null;
   processing: Processing;
   action_id: string | null;
+}
+
+export interface VoiceCapabilities {
+  enabled: boolean;
+  accepts_audio: boolean;
+  reason: string | null;
+  max_seconds: number;
+  max_upload_bytes: number;
+  accepted_mime_types: string[];
+  allowed_intents: string[];
+  auto_apply_intents: string[];
+  policy_version: number;
+  low_disk: boolean;
+}
+
+export interface Capabilities {
+  voice_commands: VoiceCapabilities;
+  query_commands: { enabled: boolean; kinds: string[] };
+  queue: { pending_voice: number; oldest_pending_age_s: number | null };
 }
 
 export interface Location {

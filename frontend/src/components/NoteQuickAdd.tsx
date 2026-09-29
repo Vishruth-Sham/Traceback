@@ -12,7 +12,7 @@ import {
   listLocations,
   retryCapture,
 } from "@/lib/traceback";
-import { ApiError, Capture, Location } from "@/lib/types";
+import { ApiError, Capture, Location, isVoiceProposal } from "@/lib/types";
 import { newIdempotencyKey } from "@/lib/apiClient";
 import { useToast } from "./Toast";
 
@@ -33,7 +33,8 @@ export function NoteQuickAdd() {
   const [folderName, setFolderName] = useState("");
   const submission = useRef<{ key: string; capturedAt: string; timezone: string; title: string; body: string; hint: string } | null>(null);
 
-  const proposal = capture?.processing.proposal;
+  const storedProposal = capture?.processing.proposal;
+  const proposal = storedProposal && !isVoiceProposal(storedProposal) ? storedProposal : null;
   const suggested = proposal?.destination_id
     ? locations.find((location) => location.id === proposal.destination_id && location.kind === proposal.destination_kind) ?? null
     : null;

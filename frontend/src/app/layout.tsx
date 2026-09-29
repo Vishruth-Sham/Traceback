@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Sidebar } from "@/components/Sidebar";
-import { CaptureBar } from "@/components/CaptureBar";
 import { ToastProvider } from "@/components/Toast";
+import { VoiceCommandProvider } from "@/components/voice/VoiceCommandProvider";
 
 export const metadata: Metadata = {
   title: "Traceback",
@@ -14,11 +14,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     <html lang="en" className="h-full antialiased">
       <body className="h-full min-h-full bg-paper text-ink">
         <ToastProvider>
-          <div className="flex h-screen min-w-[860px] overflow-hidden">
-            <Sidebar />
-            <main className="relative flex-1 overflow-y-auto">{children}</main>
-          </div>
-          <CaptureBar />
+          <VoiceCommandProvider>
+            <div className="flex h-screen min-w-[860px] overflow-hidden">
+              <Sidebar />
+              <main className="relative flex-1 overflow-y-auto">{children}</main>
+            </div>
+          </VoiceCommandProvider>
         </ToastProvider>
       </body>
     </html>

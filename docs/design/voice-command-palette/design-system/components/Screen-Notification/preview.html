@@ -1,0 +1,13 @@
+<!-- @dsCard group="Screens · P0 voice flow" height=380 width=1440 subtitle="7. Notification while unfocused" -->
+<div id="root"></div>
+<script>
+  (function () {
+    var el = document.getElementById("root");
+    var notif = Traceback.notification({
+      title: "3 overdue tasks found",
+      body: '“Show my overdue tasks”',
+      action: "Open Tasks"
+    });
+    Traceback.desktopScene(el, { notificationHtml: notif });
+  })();
+</script>

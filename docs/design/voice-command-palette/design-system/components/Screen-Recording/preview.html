@@ -1,0 +1,9 @@
+<!-- @dsCard group="Screens · P0 voice flow" height=380 width=1440 subtitle="1. Recording" -->
+<div id="root"></div>
+<script>
+  (function () {
+    var el = document.getElementById("root");
+    var slot = Traceback.shell(el, { active: "Tasks", bodyHtml: Traceback.bodyTasksOverdue() });
+    el.querySelector(".tb-frame").insertAdjacentHTML("beforeend", Traceback.panelRecording(4));
+  })();
+</script>

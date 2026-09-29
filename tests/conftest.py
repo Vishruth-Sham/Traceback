@@ -52,3 +52,20 @@ def client():
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def drain_claimable_captures(client) -> None:
+    """Archive every claimable capture left by earlier tests in the shared session database.
+
+    `claim-next` is oldest-first (with aging), unlike the retired newest-first runner query, so a
+    test that expects its own capture to be processed must start from an empty queue.
+    """
+    for state in ("pending", "processing"):
+        cursor = None
+        while True:
+            page = client.get("/api/v1/captures", params={"state": state, "limit": 100, **({"cursor": cursor} if cursor else {})}).json()
+            for capture in page["items"]:
+                client.post(f"/api/v1/captures/{capture['id']}/archive", json={"expected_version": capture["version"]})
+            cursor = page.get("next_cursor")
+            if not cursor:
+                break

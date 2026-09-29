@@ -1,0 +1,258 @@
+<title>Traceback Voice Mockups</title>
+<style>
+  :root {
+    --surface-100:#f6f1e6; --surface-200:#efe7d4; --surface-300:#e6dcc2;
+    --panel-raised:#fbf7ee; --border:#cabe9c; --border-strong:#241a10;
+    --ink:#241a10; --ink-muted:#6f6350; --ink-faint:#a89b7e;
+    --accent:#8a3a1e; --success-ink:#3c5a34; --warning-ink:#8a5a1a; --danger-ink:#7a2a20;
+    --shadow: rgba(36,26,16,0.22); --scrim: rgba(36,26,16,0.06);
+    --mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+    color-scheme: light;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; background: var(--surface-100); color: var(--ink); font-family: var(--mono);
+    padding: 32px 16px 64px;
+  }
+  .page { max-width: 1160px; margin: 0 auto; }
+  .masthead { padding-block: 12px 28px; }
+  .masthead .eyebrow { font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-muted); }
+  .masthead h1 { font-size: 28px; margin: 8px 0 10px; text-wrap: balance; }
+  .masthead p { max-width: 640px; font-size:14px; line-height:1.6; color:var(--ink-muted); margin:0; }
+
+  .section { margin-top: 40px; }
+  .section__head { display:flex; align-items:baseline; gap:12px; margin-bottom:10px; flex-wrap:wrap; }
+  .section__num { font-size:12px; color:var(--ink-muted); }
+  .section__title { font-size:16px; font-weight:700; }
+  .section__note { font-size:12.5px; color:var(--ink-muted); margin: 0 0 14px; max-width:680px; line-height:1.55; }
+
+  .mockup-scroll { overflow-x:auto; border:1px solid var(--border); border-radius:10px; box-shadow:0 6px 18px var(--shadow); }
+  .frame { width:1440px; height:900px; position:relative; overflow:hidden; background:var(--surface-100); display:flex; flex-direction:column; }
+
+  .topbar { height:48px; flex:none; display:flex; align-items:center; justify-content:space-between; padding:0 20px; border-bottom:1px solid var(--border); background:var(--surface-200); }
+  .topbar__brand { font-size:13px; font-weight:700; }
+  .topbar__hint { font-size:11px; color:var(--ink-muted); border:1px solid var(--border); border-radius:3px; padding:3px 8px; background:var(--surface-100); }
+  .topbar__hint b { color:var(--ink); }
+
+  .body { flex:1; display:flex; min-height:0; }
+  .sidebar { width:220px; flex:none; border-right:1px solid var(--border); background:var(--surface-200); padding:16px 0; }
+  .sidebar__label { font-size:10px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink-faint); padding:12px 20px 4px; }
+  .nav { display:flex; align-items:center; justify-content:space-between; padding:7px 20px; font-size:13px; color:var(--ink-muted); border-left:2px solid transparent; }
+  .nav b { color:var(--ink-faint); font-weight:400; font-size:11px; }
+  .nav--active { color:var(--ink); font-weight:700; border-left-color:var(--accent); background:var(--surface-300); }
+  .nav--active b { color:var(--accent); }
+
+  .content { flex:1; padding:28px 36px; position:relative; overflow:hidden; }
+  .crumb { font-size:11px; color:var(--ink-muted); margin-bottom:6px; }
+  .h1 { font-size:20px; font-weight:700; margin:0 0 18px; }
+  .table { border:1px solid var(--border); border-radius:6px; overflow:hidden; background:var(--panel-raised); }
+  .row { display:flex; align-items:center; gap:12px; padding:11px 16px; border-bottom:1px solid var(--border); font-size:13px; }
+  .row:last-child { border-bottom:none; }
+  .row .check { width:14px; height:14px; border:1.5px solid var(--ink-muted); border-radius:50%; flex:none; }
+  .row .title { flex:1; }
+  .row .meta { font-size:11px; color:var(--ink-muted); }
+  .row .meta.late { color:var(--warning-ink); font-weight:700; }
+  .row--hl { background:var(--surface-300); }
+
+  .dock { position:absolute; left:50%; bottom:32px; transform:translateX(-50%); width:460px; }
+  .panel { background:var(--panel-raised); border:1.5px solid var(--border-strong); border-radius:10px; box-shadow:0 10px 28px var(--shadow); padding:14px 18px; }
+  .panel.rest { border-color: var(--border); }
+  .p-row1 { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .p-status { display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--accent); flex:none; }
+  .p-time { font-size:12px; color:var(--ink-muted); }
+  .wave { display:flex; align-items:flex-end; gap:3px; height:22px; margin:10px 0 8px; }
+  .wave span { width:3px; background:var(--ink); border-radius:2px; display:inline-block; }
+  .p-hints { display:flex; justify-content:space-between; font-size:11px; color:var(--ink-muted); }
+  .p-hints b { color:var(--ink); }
+  .p-query { font-size:13px; margin-bottom:6px; }
+  .p-query::before { content:"\201C"; } .p-query::after { content:"\201D"; }
+  .p-progress { font-size:12px; color:var(--ink-muted); display:flex; align-items:center; gap:8px; }
+  .spinner { width:10px; height:10px; border-radius:50%; border:1.5px solid var(--border); border-top-color:var(--ink); }
+  .p-head { display:flex; align-items:baseline; justify-content:space-between; font-size:11px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-muted); padding-bottom:8px; margin-bottom:8px; border-bottom:1px solid var(--border); }
+  .p-head b { color:var(--ink); }
+  .plist { display:flex; flex-direction:column; }
+  .prow { display:flex; align-items:center; gap:10px; padding:7px 0; font-size:13px; border-bottom:1px solid var(--border); }
+  .prow:last-child { border-bottom:none; }
+  .prow .idx { width:14px; color:var(--ink-muted); font-size:12px; flex:none; }
+  .prow .bullet { width:12px; height:12px; border-radius:50%; border:1.5px solid var(--ink-muted); flex:none; }
+  .prow .main { flex:1; min-width:0; }
+  .prow .path { font-size:11px; color:var(--ink-muted); }
+  .p-footer { display:flex; justify-content:space-between; align-items:center; margin-top:10px; padding-top:10px; border-top:1px solid var(--border); }
+  .btn { font-family:inherit; font-size:12px; font-weight:700; border-radius:3px; padding:6px 12px; border:1px solid var(--border-strong); background:transparent; color:var(--ink); }
+  .btn.primary { background:var(--ink); color:var(--panel-raised); }
+  .btn.ghost { border-color:var(--border); color:var(--ink-muted); }
+  .p-note { font-size:12px; color:var(--ink-muted); margin-top:6px; }
+  .err-title { color:var(--danger-ink); font-weight:700; }
+  .check-ok { color:var(--success-ink); font-weight:700; }
+
+  .desktop { width:1440px; height:900px; position:relative; overflow:hidden; background:linear-gradient(180deg,#d8cba3 0%,#c9b98c 100%); }
+  .menubar { height:26px; background:rgba(251,247,238,.86); border-bottom:1px solid rgba(36,26,16,.18); display:flex; align-items:center; justify-content:space-between; padding:0 14px; font-size:12px; }
+  .window { position:absolute; top:70px; left:90px; width:980px; height:700px; background:var(--surface-100); border:1px solid rgba(36,26,16,.25); border-radius:8px; box-shadow:0 20px 40px rgba(36,26,16,.28); overflow:hidden; }
+  .window__bar { height:30px; background:var(--surface-200); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:6px; padding:0 12px; }
+  .wdot { width:10px; height:10px; border-radius:50%; background:var(--ink-faint); }
+  .window__title { margin-left:8px; font-size:11px; color:var(--ink-muted); }
+  .window__body { padding:24px 28px; font-size:13px; color:var(--ink-muted); line-height:1.6; max-width:600px; }
+  .notif { position:absolute; top:40px; right:20px; width:340px; background:var(--panel-raised); border:1px solid var(--border); border-radius:6px; box-shadow:0 10px 24px var(--shadow); padding:12px 14px; }
+  .notif__head { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .notif__badge { width:18px; height:18px; border-radius:4px; background:var(--ink); color:var(--panel-raised); display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; flex:none; }
+  .notif__app { font-size:11px; font-weight:700; color:var(--ink-muted); }
+  .notif__time { margin-left:auto; font-size:10px; color:var(--ink-faint); }
+  .notif__title { font-size:13px; font-weight:700; margin-bottom:2px; }
+  .notif__body { font-size:12px; color:var(--ink-muted); }
+  .notif__action { margin-top:8px; font-size:11px; font-weight:700; color:var(--accent); }
+
+  .specgrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px; }
+  .speccell { border:1px solid var(--border); border-radius:6px; padding:10px; background:var(--surface-200); }
+  .speccell__label { font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--ink-muted); margin-bottom:8px; }
+  .speccell .dock { position:static; transform:none; width:100%; }
+  .speccell .panel { font-size:12px; }
+
+  footer { margin-top:56px; padding-top:20px; border-top:1px solid var(--border); font-size:12px; color:var(--ink-muted); }
+  a { color: var(--accent); }
+</style>
+
+<div class="page">
+  <div class="masthead">
+    <div class="eyebrow">Voice-first interaction &middot; P0 read-only</div>
+    <h1>Traceback Voice Command Palette</h1>
+    <p>One floating panel, layered over the existing app, never a chat window. Recording, transcription and interpretation stay on-device. Scroll a mockup sideways if it doesn't fit &mdash; each is a real 1440&times;900 desktop frame.</p>
+  </div>
+
+  <div class="section" id="s1">
+    <div class="section__head"><span class="section__num">1</span><span class="section__title">Recording</span></div>
+    <p class="section__note">Compact, unmistakable indicator: pulsing dot, elapsed time, waveform, literal key hints. The Tasks screen underneath stays fully visible &mdash; no scrim, no blur.</p>
+    <div class="mockup-scroll"><div class="frame" id="f1"></div></div>
+  </div>
+
+  <div class="section" id="s2">
+    <div class="section__head"><span class="section__num">2</span><span class="section__title">Processing</span></div>
+    <p class="section__note">The transcribed query stays pinned above specific progress copy &mdash; never "AI is thinking."</p>
+    <div class="mockup-scroll"><div class="frame" id="f2"></div></div>
+  </div>
+
+  <div class="section" id="s3">
+    <div class="section__head"><span class="section__num">3</span><span class="section__title">Successful result &mdash; overdue tasks</span></div>
+    <p class="section__note">A summary, not a second app. "Open Tasks" hands off to the canonical, already-filtered screen underneath.</p>
+    <div class="mockup-scroll"><div class="frame" id="f3"></div></div>
+  </div>
+
+  <div class="section" id="s4">
+    <div class="section__head"><span class="section__num">4</span><span class="section__title">Search &mdash; multiple matches</span></div>
+    <p class="section__note">Every row carries a full breadcrumb. Say "open the first one" or click &mdash; both do exactly the same thing.</p>
+    <div class="mockup-scroll"><div class="frame" id="f4"></div></div>
+  </div>
+
+  <div class="section" id="s5">
+    <div class="section__head"><span class="section__num">5</span><span class="section__title">Ambiguity &mdash; never guessed</span></div>
+    <p class="section__note">Triggered specifically by a name collision. No default selection, no auto-timeout that picks one.</p>
+    <div class="mockup-scroll"><div class="frame" id="f5"></div></div>
+  </div>
+
+  <div class="section" id="s6">
+    <div class="section__head"><span class="section__num">6</span><span class="section__title">Backend unavailable</span></div>
+    <p class="section__note">Warning glyph plus red-toned text, never color alone. Copy always names the fix.</p>
+    <div class="mockup-scroll"><div class="frame" id="f6"></div></div>
+  </div>
+
+  <div class="section" id="s7">
+    <div class="section__head"><span class="section__num">7</span><span class="section__title">Notification while unfocused</span></div>
+    <p class="section__note">Traceback is never pulled to the foreground unexpectedly. Clicking the notification opens it directly at the result.</p>
+    <div class="mockup-scroll"><div class="frame" id="f7"></div></div>
+  </div>
+
+  <div class="section" id="s8">
+    <div class="section__head"><span class="section__num">8</span><span class="section__title">One panel, nine states</span></div>
+    <p class="section__note">Same 460px dock, same border-emphasis rule throughout &mdash; only content and emphasis change per state.</p>
+    <div class="specgrid" id="spec"></div>
+  </div>
+
+  <footer>Traceback &middot; local-first, on-device voice (Whisper + Ollama) &middot; P0 covers search, navigation and read-only queries only.</footer>
+</div>
+
+<script>
+(function () {
+  function esc(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  function wave() { let b=''; for (let i=0;i<7;i++) b += '<span style="height:'+(8+((i*7)%14))+'px"></span>'; return '<div class="wave" aria-hidden="true">'+b+'</div>'; }
+
+  var NAV = [['Inbox','6'],['Tasks','12'],['Projects','5'],['Notes',''],['Folders',''],['Categories',''],['Archive','']];
+  function shellHtml(active, bodyHtml, hint) {
+    var nav = NAV.map(function(n){
+      var cls = 'nav' + (n[0]===active ? ' nav--active' : '');
+      return '<div class="'+cls+'"><span>'+n[0]+'</span>'+(n[1]?'<b>'+n[1]+'</b>':'')+'</div>';
+    }).join('');
+    return '<div class="topbar"><div class="topbar__brand">Traceback</div><div class="topbar__hint">'+(hint||'Hold <b>&#8997; Option</b> + <b>Space</b> to speak')+'</div></div>'+
+      '<div class="body"><div class="sidebar"><div class="sidebar__label">Traceback</div>'+nav+'</div>'+
+      '<div class="content">'+bodyHtml+'</div></div>';
+  }
+  function bodyTasks() {
+    var rows = [['Submit expense report','3d late',1],['Renew insurance','1d late',1],['Send vendor response','1d late',1],['Review Q3 budget draft','Due today',0],['Water office plants','Due Fri',0]];
+    return '<div class="crumb">Tasks</div><div class="h1">All Tasks</div><div class="table">'+rows.map(r=>'<div class="row'+(r[2]?' row--hl':'')+'"><div class="check"></div><div class="title">'+r[0]+'</div><div class="meta'+(r[2]?' late':'')+'">'+r[1]+'</div></div>').join('')+'</div>';
+  }
+  function bodyProjects() {
+    var rows = [['DSA Learning','18 notes &middot; 4 open tasks'],['Kitchen Renovation','6 notes &middot; 9 open tasks'],['Course Notes','31 notes &middot; 2 open tasks'],['Home / Renovation','2 notes &middot; 1 open task'],['Archive / Renovation','12 notes &middot; 0 open tasks']];
+    return '<div class="crumb">Projects</div><div class="h1">All Projects</div><div class="table">'+rows.map(r=>'<div class="row"><div class="title">'+r[0]+'</div><div class="meta">'+r[1]+'</div></div>').join('')+'</div>';
+  }
+  function bodyInbox() {
+    var rows = [['Voice command needs review','&#8213; “add task follow up w...”'],['Voice command needs review','&#8213; “remind me to call...”'],['Unclassified note','&#8213; pasted from clipboard'],['Unclassified note','&#8213; “idea: weekend trip”'],['Unclassified note','&#8213; meeting scratch notes'],['Failed recording','&#8213; no speech detected']];
+    return '<div class="crumb">Inbox</div><div class="h1">Inbox</div><div class="table">'+rows.map(r=>'<div class="row"><div class="title">'+r[0]+'</div><div class="meta">'+r[1]+'</div></div>').join('')+'</div>';
+  }
+
+  function dock(inner, cls) { return '<div class="dock"><div class="panel '+(cls||'')+'">'+inner+'</div></div>'; }
+  function panelRecording() {
+    return dock('<div class="p-row1"><div class="p-status"><span class="dot"></span> Recording&hellip;</div><div class="p-time">0:04</div></div>'+wave()+'<div class="p-hints"><span>Release <b>&#8997; Option</b>+<b>Space</b> to send</span><span><b>Esc</b> to cancel</span></div>');
+  }
+  function panelProcessing() {
+    return dock('<div class="p-query">Show my overdue tasks</div><div class="p-progress"><span class="spinner"></span>Finding tasks&hellip;</div>');
+  }
+  function panelResult() {
+    var rows=[['Submit expense report','3d late'],['Renew insurance','1d late'],['Send vendor response','1d late']];
+    return dock('<div class="p-head"><b>Overdue tasks</b><span>3</span></div><div class="plist">'+rows.map(r=>'<div class="prow"><div class="bullet"></div><div class="main">'+r[0]+'</div><div class="meta late">'+r[1]+'</div></div>').join('')+'</div><div class="p-footer"><button class="btn primary">Open Tasks</button><button class="btn ghost">Dismiss</button></div>', 'rest');
+  }
+  function panelMultiple() {
+    var rows=[['Normal Forms','Learning / Database Systems'],['Database Normalization','Projects / Course Notes']];
+    return dock('<div class="p-head"><b>Results for “normal forms”</b><span>2</span></div><div class="plist">'+rows.map((r,i)=>'<div class="prow"><div class="idx">'+(i+1)+'</div><div class="bullet"></div><div class="main">'+r[0]+'<div class="path">'+r[1]+'</div></div></div>').join('')+'</div><div class="p-note">Say &ldquo;open the first one&rdquo; or select one</div>', 'rest');
+  }
+  function panelAmbiguity() {
+    var rows=[['Renovation','Home'],['Renovation','Archive']];
+    return dock('<div class="p-query" style="margin-bottom:10px">Open Renovation</div><div class="p-head"><b>I found two projects named Renovation</b></div><div class="plist">'+rows.map((r,i)=>'<div class="prow"><div class="idx">'+(i+1)+'</div><div class="bullet"></div><div class="main">'+r[0]+'<div class="path">'+r[1]+'</div></div></div>').join('')+'</div><div class="p-note">Say &ldquo;the first one&rdquo; or select it &mdash; Traceback never guesses.</div>', 'rest');
+  }
+  function panelUnavailable() {
+    return dock('<div class="p-status" style="margin-bottom:6px">&#9888; <span class="err-title">Voice processing unavailable</span></div><div class="p-note" style="margin-top:0">The local processor isn’t running. Start Traceback’s background service, or type your search instead.</div><div class="p-footer"><button class="btn ghost">Dismiss</button></div>');
+  }
+  function panelIdle() { return dock('<div class="p-hints" style="justify-content:flex-start; gap:8px;"><span style="width:9px;height:9px;border-radius:50%;border:1.5px solid var(--ink-muted);display:inline-block;"></span> Hold <b>&#8997; Option</b>+<b>Space</b> to speak</div>'); }
+  function panelConfirm() { return dock('<div style="display:flex;align-items:center;gap:8px;font-size:13px;"><span class="check-ok">&#10003;</span> <b>Opened:</b> Projects / DSA Learning</div>', 'rest'); }
+  function panelNoResults() { return dock('<div class="p-query">Find my note about quantum entanglement</div><div class="p-note" style="margin-top:2px">No matches found. Try rephrasing, or say &ldquo;show all tasks&rdquo;.</div>'); }
+  function panelPermission() { return dock('<div class="p-status" style="margin-bottom:6px">&#9888; <span class="err-title">Microphone access needed</span></div><div class="p-note" style="margin-top:0">Grant microphone access in System Settings &rarr; Privacy &amp; Security.</div><div class="p-footer"><button class="btn primary">Open Settings</button><button class="btn ghost">Dismiss</button></div>'); }
+  function panelCancelled() { return dock('<div class="p-note" style="margin:0">Cancelled &mdash; nothing was sent.</div>'); }
+
+  function notif(title, body, action) {
+    return '<div class="notif"><div class="notif__head"><span class="notif__badge">T</span><span class="notif__app">TRACEBACK</span><span class="notif__time">now</span></div><div class="notif__title">'+title+'</div><div class="notif__body">'+body+'</div>'+(action?'<div class="notif__action">'+action+'</div>':'')+'</div>';
+  }
+
+  document.getElementById('f1').innerHTML = shellHtml('Tasks', bodyTasks()) + panelRecording();
+  document.getElementById('f2').innerHTML = shellHtml('Tasks', bodyTasks()) + panelProcessing();
+  document.getElementById('f3').innerHTML = shellHtml('Tasks', bodyTasks()) + panelResult();
+  document.getElementById('f4').innerHTML = shellHtml('Notes', bodyInbox()) + panelMultiple();
+  document.getElementById('f5').innerHTML = shellHtml('Projects', bodyProjects()) + panelAmbiguity();
+  document.getElementById('f6').innerHTML = shellHtml('Tasks', bodyTasks()) + panelUnavailable();
+  document.getElementById('f7').innerHTML =
+    '<div class="desktop"><div class="menubar"><span>&#63743; Mail</span><span>Tue 9:41 AM</span></div>'+
+    '<div class="window"><div class="window__bar"><span class="wdot"></span><span class="wdot"></span><span class="wdot"></span><span class="window__title">Mail &mdash; Inbox</span></div>'+
+    '<div class="window__body">Traceback is running in the background. The &#8997; Option + Space shortcut still works from any app &mdash; Traceback stays out of the way instead of stealing focus.</div></div>'+
+    notif('3 overdue tasks found', '“Show my overdue tasks”', 'Open Tasks') + '</div>';
+
+  var states = [
+    ['1. Idle / ready', panelIdle()],
+    ['2. Recording', panelRecording()],
+    ['3. Processing', panelProcessing()],
+    ['4. Successful result', panelConfirm()],
+    ['5. Multiple matches', panelMultiple()],
+    ['6. No results', panelNoResults()],
+    ['7. Backend unavailable', panelUnavailable()],
+    ['8. Microphone permission missing', panelPermission()],
+    ['9. Cancelled', panelCancelled()]
+  ];
+  document.getElementById('spec').innerHTML = states.map(s => '<div class="speccell"><div class="speccell__label">'+s[0]+'</div>'+s[1]+'</div>').join('');
+})();
+</script>

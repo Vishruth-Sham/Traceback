@@ -1,0 +1,14 @@
+{
+  "v": 3,
+  "layout": "files",
+  "createdOnFiles": { "v": 1, "at": "2026-09-27T00:00:00Z" },
+  "title": "Traceback Voice Command Palette",
+  "namespace": "Traceback",
+  "libraries": [],
+  "sections": {},
+  "groups": [],
+  "assetGroups": {},
+  "blobs": {},
+  "docs": { "readme": "project/README.md", "sections": [] },
+  "lastChange": { "by": "Vishruth Shambhat", "via": "Claude Code", "at": "2026-09-27T00:00:00Z", "note": "Initial P0 voice-first design system: panel states, full-screen mockups, notifications." }
+}

@@ -1,7 +1,7 @@
 # Note quick add with reviewed placement
 
 Date: 2026-09-15
-Status: Implemented
+Status reviewed: 2026-09-26 — implemented through migration `20260915_0006` and commit `916d557`. The sections below preserve the design rationale; “should” language describes the implemented contract unless explicitly marked out of scope.
 
 ## Goal
 
@@ -37,7 +37,7 @@ The mockup is visual guidance, not the product contract. Apply the current decis
 - Stale automated work cannot overwrite a later user edit or manual decision.
 - The existing `/notes/new` manual path remains available without Qwen.
 
-## Proposed implementation
+## Implemented design
 
 ### End-to-end flow
 
@@ -217,7 +217,7 @@ Extend MCP `create_capture` with bounded `processing_profile` and `placement_hin
 
 If a dedicated user-facing reprocess operation is added, expose that through MCP with the same capture-version and generation checks. Never expose lease tokens, claim/fail operations, or arbitrary model output submission to MCP clients.
 
-## Expected file areas
+## Implementation map
 
 - Migration under `migrations/versions/`
 - `backend/capture_models.py`
@@ -236,9 +236,11 @@ If a dedicated user-facing reprocess operation is added, expose that through MCP
 - Backend, processor, MCP, and frontend tests
 - `docs/backend-api.md`, `docs/processor-contract.md`, `docs/mcp-adapter.md`, `docs/mcp-tool-reference.md`, and `docs/ui-plan.md`
 
-Before frontend implementation, read the relevant version-matched Next.js documentation under `frontend/node_modules/next/dist/docs/` as required by `frontend/AGENTS.md`.
+The frontend implementation followed the version-matched Next.js guidance referenced by `frontend/AGENTS.md`.
 
-## Test plan
+## Verification contract
+
+Deterministic backend, processor, MCP, and frontend coverage was added for this feature. The checklist below records the intended coverage boundary; the repository-wide observed results are maintained in [backend-validation.md](../backend-validation.md).
 
 ### PostgreSQL-backed API tests
 
