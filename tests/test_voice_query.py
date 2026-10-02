@@ -237,14 +237,14 @@ def test_list_contents_with_no_such_place_is_no_results(client, voice):  # noqa:
     assert result["kind"] == "no_results"
 
 
-@pytest.mark.parametrize("spoken,route", [("inbox", "/inbox"), ("go to tasks", "/tasks"), ("projects", "/projects"), ("archive", "/archive"), ("skills", "/skills"), ("learning", "/category/learning")])
+@pytest.mark.parametrize("spoken,route", [("inbox", "/inbox"), ("go to tasks", "/tasks"), ("projects", "/projects"), ("archive", "/archive"), ("learning", "/category/learning")])
 def test_navigate_opens_every_page_and_category(client, voice, spoken, route):  # noqa: F811
     phrase = spoken.removeprefix("go to ")
     result = resolve(client, typed_voice(client, f"open {phrase}"), kind="navigate", phrase=phrase).json()["query_result"]
     assert result["kind"] == "confirm" and result["confirm"]["route"] == route
 
 
-def test_listing_archive_or_skills_just_opens_the_page(client, voice):  # noqa: F811
+def test_listing_archive_just_opens_the_page(client, voice):  # noqa: F811
     result = resolve(client, typed_voice(client, "show archive"), kind="list_contents", phrase="archive").json()["query_result"]
     assert result["kind"] == "confirm" and result["confirm"]["route"] == "/archive"
 

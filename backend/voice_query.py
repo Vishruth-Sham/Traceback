@@ -124,7 +124,6 @@ _PAGES = (
     {"key": "tasks", "title": "Tasks", "route": "/tasks", "aliases": {"tasks", "task", "task list", "todos", "to dos", "todo"}, "listable": True},
     {"key": "projects", "title": "Projects", "route": "/projects", "aliases": {"projects", "project"}, "listable": True},
     {"key": "archive", "title": "Archive", "route": "/archive", "aliases": {"archive", "archived"}, "listable": False},
-    {"key": "skills", "title": "Skills", "route": "/skills", "aliases": {"skills", "skill"}, "listable": False},
 )
 _SCOPE_LEAD = re.compile(r"^(?:(?:everything|all|my|the|every)\s+)+(?:in\s+)?|^in\s+")
 _SCOPE_TRAIL = re.compile(r"\s+(?:page|tab|list|category|section)$")
@@ -213,7 +212,7 @@ def _resolve_list_contents(session: Session, phrase: str, today: date) -> dict[s
             matches = _match_batch(session, list(rows))
             note = None if matches else "You have no projects."
             return {"kind": "result", "label": "Projects", "matches": matches, "note": note, "footer_action": {"label": "Open Projects", "route": page["route"]}}
-        return {"kind": "confirm", "confirm": _page_match(page)}  # archive/skills have no item list to read out
+        return {"kind": "confirm", "confirm": _page_match(page)}  # Archive has no item list to read out.
     containers: list[Item | Category] = []
     exact_categories: list[Category] = []
     if parent_needle is None:

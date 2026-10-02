@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { SWRConfig } from "swr";
 import { Capture, Item } from "@/lib/types";
-import { fakeVoice, makeVoiceCapture, taskProposal, WithVoice, CAPS } from "./helpers";
+import { fakeVoice, makeVoiceCapture, taskProposal, WithVoice } from "./helpers";
 
 const trackers = { toast: vi.fn() };
 
@@ -87,17 +87,5 @@ describe("Inbox visibility", () => {
     surface(<InboxPage />);
     expect(await screen.findByText("No speech was detected. Your recording is saved.")).toBeInTheDocument();
     expect(screen.getByLabelText("Recording")).toBeInTheDocument();
-  });
-});
-
-describe("Skills page", () => {
-  it("reflects capabilities: Planned while off, Available (review-first) when on", async () => {
-    const { VoiceSkillCard } = await import("@/components/voice/VoiceSkillCard");
-    surface(<VoiceSkillCard />, fakeVoice({ capabilities: { ...CAPS, enabled: false } }));
-    expect(screen.getByText("planned")).toBeInTheDocument();
-    document.body.innerHTML = "";
-    surface(<VoiceSkillCard />);
-    expect(screen.getByText("available (review-first)")).toBeInTheDocument();
-    expect(screen.getByText(/has not been benchmarked/)).toBeInTheDocument();
   });
 });
