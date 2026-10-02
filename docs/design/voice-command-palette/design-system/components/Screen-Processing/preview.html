@@ -1,9 +1,0 @@
-<!-- @dsCard group="Screens · P0 voice flow" height=380 width=1440 subtitle="2. Processing" -->
-<div id="root"></div>
-<script>
-  (function () {
-    var el = document.getElementById("root");
-    Traceback.shell(el, { active: "Tasks", bodyHtml: Traceback.bodyTasksOverdue() });
-    el.querySelector(".tb-frame").insertAdjacentHTML("beforeend", Traceback.panelProcessing("Show my overdue tasks", "Finding tasks…"));
-  })();
-</script>

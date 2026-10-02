@@ -23,7 +23,6 @@ import { ENTRY_LABEL } from "./voiceLabels";
 import { RecorderState, VoiceContext, VoiceContextValue } from "./voiceContext";
 import { PaletteView, VoicePalette } from "./VoicePalette";
 
-export const SHORTCUT_LABEL = "⌥ Option + Space"; // matches the mockup and the native helper's default binding
 const QUERY_POLL_MS = 500;
 const QUERY_POLL_TIMEOUT_MS = 20_000;
 const CONFIRM_DISMISS_MS = 2600;
@@ -77,7 +76,6 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
   const [unsentError, setUnsentError] = useState<{ message: string; retryable: boolean } | null>(null);
   const [tray, setTray] = useState<string[]>([]);
   const [overlay, setOverlayValue] = useState<PaletteView | null>(null);
-  const [typing, setTyping] = useState(false);
   const router = useRouter();
   const overlayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollTokenRef = useRef(0);
@@ -295,7 +293,6 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
       attempt.key,
     );
     typedAttemptRef.current = null;
-    setTyping(false);
     pollCaptureForQuery(capture.id);
   }, [pollCaptureForQuery]);
 
@@ -388,7 +385,6 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
         return;
       }
       setOverlay(null);
-      setTyping(false);
       setState("requesting_permission");
       const caps = await refreshCapabilities();
       if (!caps || !caps.enabled || !caps.accepts_audio) {
@@ -500,35 +496,14 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
     [],
   );
 
-  // In-app fallback for the configurable shortcut (default Option+Space): push-to-talk while the
-  // Traceback tab itself is focused. The native macOS helper (see native/) covers system-wide
-  // capture when Traceback isn't the focused app; both call the same loopback recording pipeline.
+  // Keep Escape as a way to cancel a recording started from the microphone button.
   useEffect(() => {
-    function isTypingTarget(target: EventTarget | null): boolean {
-      const el = target as HTMLElement | null;
-      if (!el) return false;
-      const tag = el.tagName;
-      return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable;
-    }
     function onKeyDown(event: KeyboardEvent) {
-      if (event.repeat) return;
-      if (event.altKey && event.code === "Space" && !isTypingTarget(event.target)) {
-        event.preventDefault();
-        if (stateRef.current === "idle") void start({ entryPoint: "global" });
-      } else if (event.key === "Escape" && stateRef.current === "recording") {
-        cancel();
-      }
-    }
-    function onKeyUp(event: KeyboardEvent) {
-      if (event.code === "Space" && stateRef.current === "recording") stop();
+      if (event.key === "Escape" && stateRef.current === "recording") cancel();
     }
     window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("keyup", onKeyUp);
-    return () => {
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("keyup", onKeyUp);
-    };
-  }, [cancel, start, stop]);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [cancel]);
 
   const disabledReason = useMemo(() => {
     if (capabilityError) return "Voice commands are unavailable (the server can't be reached)";
@@ -544,20 +519,17 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
 
   let paletteView: PaletteView | null = overlay;
   if (!paletteView) {
-    if (typing) {
-      paletteView = { kind: "typing" };
-    } else if (state === "recording") {
-      paletteView = { kind: "recording", elapsedMs, maxMs: (capabilities?.max_seconds ?? 60) * 1000, shortcutLabel: SHORTCUT_LABEL };
-    } else if (state === "idle" && capabilities?.enabled && !capabilityError) {
-      paletteView = { kind: "idle", shortcutLabel: SHORTCUT_LABEL };
+    if (state === "recording") {
+      paletteView = { kind: "recording", elapsedMs, maxMs: (capabilities?.max_seconds ?? 60) * 1000 };
+    } else {
+      paletteView = { kind: "idle" };
     }
   }
 
   return (
     <VoiceContext.Provider value={value}>
       {children}
-      {paletteView && (
-        <VoicePalette
+      <VoicePalette
           view={paletteView}
           onDismiss={() => setOverlay(null)}
           onSelect={(match) => {
@@ -573,16 +545,12 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
             window.location.href = "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
           }}
           onStartRecording={() => void start({ entryPoint: "global" })}
-          onStartTyping={() => { setOverlay(null); setTyping(true); }}
-          onCancelTyping={() => { typedAttemptRef.current = null; setTyping(false); }}
           onSubmitTyped={submitTyped}
           onStopRecording={stop}
-          onCancelRecording={cancel}
         />
-      )}
       {(state === "requesting_permission" || state === "failed_unsent") && (
         <div
-          className="pointer-events-none fixed bottom-8 z-50"
+          className="pointer-events-none fixed bottom-[64px] z-50"
           style={{ left: "calc(280px + max(0px, 50vw - 500px))", width: "min(680px, calc(100vw - 320px))" }}
         >
           <div
@@ -590,7 +558,7 @@ export function VoiceCommandProvider({ children }: { children: React.ReactNode }
             role="region"
             aria-label="Voice recorder"
             tabIndex={-1}
-            className="pointer-events-auto flex w-full items-center gap-3 rounded-lg border border-hairline bg-paper-soft px-4 py-2.5 text-[13px] shadow-sm"
+            className="pointer-events-auto flex w-full items-center gap-3 rounded-[8px] border border-hairline bg-paper px-4 py-2.5 text-[13px]"
           >
             {state === "requesting_permission" && (
               <>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
 import { useParams } from "next/navigation";
 import useSWR from "swr";
 import { Search } from "lucide-react";
@@ -13,13 +13,14 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/StateViews";
 import { ItemDetailPanel } from "@/components/ItemDetailPanel";
 import { useDetailPanel } from "@/lib/useDetailPanel";
 import { PageHeader } from "@/components/PageHeader";
+import { useUrlParameter } from "@/lib/useUrlParameter";
 
 function CategoryPageInner() {
   const params = useParams<{ slug: string }>();
   const slug = params.slug as CategorySlug;
   const { categories, isLoading: categoriesLoading } = useCategories();
   const category = categoryBySlug(categories, slug);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useUrlParameter("q");
   const { openId, open, close } = useDetailPanel();
 
   const { data, error, isLoading } = useSWR(

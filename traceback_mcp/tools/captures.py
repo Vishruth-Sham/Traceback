@@ -5,10 +5,7 @@ checkpoint) are deliberately not exposed here: they exist to let the bounded
 local processor safely hand back a durable failure under an active lease it
 holds, which an MCP client never does. Exposing them would let a client fence
 out or corrupt the processor's own in-flight work without a documented need.
-Binary audio never flows through MCP either: voice audio ingest
-(`POST /voice-captures`) and `POST /assets` for audio are excluded, and a
-typed voice command (`processing_profile="voice_command"`) is the MCP way to
-exercise the same review-first pipeline without speech-to-text.
+Binary audio and voice-command processing are not exposed through MCP.
 """
 
 import uuid
@@ -37,9 +34,8 @@ def create_capture(
     supplied_title: str | None = None,
     supplied_author: str | None = None,
     supplied_published_date: str | None = None,
-    processing_profile: Literal["general", "task_quick_add", "note_quick_add", "voice_command"] = "general",
+    processing_profile: Literal["general", "task_quick_add", "note_quick_add"] = "general",
     placement_hint: str | None = None,
-    allowed_intents: list[Literal["create_note", "create_task"]] | None = None,
     idempotency_key: str | None = None,
 ) -> dict:
     """Persist an original capture before any interpretation.
@@ -56,16 +52,12 @@ def create_capture(
     reference to, and `supplied_published_date` is `YYYY-MM-DD`. Returns the
     capture's ID, state, and asset IDs; it is not yet interpreted into items.
 
-    `processing_profile="voice_command"` submits a typed voice command: the
-    text is the transcript (no speech-to-text runs), `captured_at` with a UTC
-    offset and `source_timezone` are required, `source_type` must be "typed",
-    and the adapter marks it `entry_point="mcp_typed"`. The local processor
-    proposes spoken-form slots; the backend recomputes dates, destinations and
-    warnings, and the result stays in review (`awaiting_review`) until
-    `accept_capture_proposal` or `apply_capture_interpretation`. It is never
-    auto-applied. `allowed_intents` may restrict it to create_note/create_task.
-    Fails with 403 `capability_disabled` while voice commands are off.
+    `processing_profile="voice_command"` is not supported through MCP.
     """
+    if processing_profile not in {"general", "task_quick_add", "note_quick_add"}:
+        from traceback_mcp.rest_client import RestError
+
+        raise RestError(422, "invalid_input", "Voice-command processing is not exposed through MCP", {})
     body: dict[str, Any] = {
         "source_type": source_type,
         "timestamp_origin": timestamp_origin,
@@ -102,15 +94,6 @@ def create_capture(
         metadata["supplied_published_date"] = supplied_published_date
     if placement_hint is not None:
         metadata["placement_hint"] = placement_hint
-    if processing_profile == "voice_command":
-        metadata["entry_point"] = "mcp_typed"
-        if allowed_intents is not None:
-            metadata["allowed_intents"] = list(allowed_intents)
-    elif allowed_intents is not None:
-        from traceback_mcp.errors import tool_error_from
-        from traceback_mcp.rest_client import RestError
-
-        raise tool_error_from(RestError(422, "invalid_input", "allowed_intents is only valid for voice_command captures", {}))
     if metadata:
         body["metadata"] = metadata
     return get_client().create_capture(body, idempotency_key=idempotency_key)
@@ -146,15 +129,10 @@ def correct_capture(
 
     `corrections` is a JSON object with at least one of {description, url,
     captured_at, source_date, source_timezone, note, note_text, supplied_title,
-    placement_hint, transcript_text}; only the fields you include are changed.
+    placement_hint}; only the fields you include are changed.
     The original `raw_text` can never be corrected through this operation.
-    `transcript_text` (voice_command captures only, and only while voice is
-    enabled) replaces the transcript that is interpreted: the capture is
-    requeued at a new generation and its proposal cleared. Correcting
-    `captured_at`/`source_timezone` on a voice capture likewise re-runs
-    interpretation against the corrected anchor.
     """
-    allowed = {"description", "url", "captured_at", "source_date", "source_timezone", "note", "note_text", "supplied_title", "placement_hint", "transcript_text"}
+    allowed = {"description", "url", "captured_at", "source_date", "source_timezone", "note", "note_text", "supplied_title", "placement_hint"}
     unknown = set(corrections) - allowed
     if unknown:
         from traceback_mcp.errors import tool_error_from
@@ -198,48 +176,6 @@ def retry_capture(capture_id: uuid.UUID, expected_version: int, expected_generat
     """Requeue a failed capture for another processing attempt. Does not guarantee a processor is running."""
     body = {"expected_version": expected_version, "expected_generation": expected_generation}
     return get_client().retry_capture(str(capture_id), body, idempotency_key=idempotency_key)
-
-
-@guarded
-def accept_capture_proposal(
-    capture_id: uuid.UUID,
-    expected_version: int,
-    expected_generation: int,
-    overrides: dict[str, Any] | None = None,
-    confirm_overdue: bool = False,
-    idempotency_key: str | None = None,
-) -> dict:
-    """Accept a reviewed voice-command proposal (manual mode) and create exactly one note or task.
-
-    Use the `version` and `processing.generation` from the latest `get_capture`
-    for a capture in state `awaiting_review` whose `processing.proposal.operation`
-    is not null. The backend re-validates versions and the destination at commit
-    time and creates one item with source provenance; nothing the processor or
-    the model asserted is trusted. `overrides` may set any of {item_type, title,
-    content_md, due_date, due_time, due_timezone, destination:
-    {kind: category|project|folder, id, version?}}; explicitly set fields replace
-    the proposal's (null clears), and the server records which fields were edited.
-    A deadline that has already passed returns 422 `overdue_confirmation_required`
-    (with `overdue_by_seconds`); resend with `confirm_overdue=true` only when the
-    user explicitly agrees to add it as overdue. A stale version/generation
-    returns 409 with the current `version`, `generation`, `state` and
-    `proposal_sha256` to refetch. Proposals for capture_only/ambiguous/unsupported
-    outcomes have no operation (422 `nothing_to_accept`): use
-    `apply_capture_interpretation` to save those as a note or task.
-    """
-    body: dict[str, Any] = {"expected_version": expected_version, "expected_generation": expected_generation}
-    if overrides is not None:
-        body["overrides"] = overrides
-    if confirm_overdue:
-        body["confirm_overdue"] = True
-    return get_client().accept_capture_proposal(str(capture_id), body, idempotency_key=idempotency_key)
-
-
-@guarded
-def get_capabilities() -> dict:
-    """Read the server's voice-command capabilities: enabled or not, limits, accepted formats, allowed intents,
-    whether auto-apply is available (it is off), the policy version, and pending voice queue statistics."""
-    return get_client().get_capabilities()
 
 
 @guarded

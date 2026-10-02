@@ -2,9 +2,10 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import { usePathname, useSearchParams } from "next/navigation";
 import useSWR from "swr";
-import { ChevronRight, ChevronDown, Folder, Plus, Loader2 } from "lucide-react";
-import { createFolder, listItems } from "@/lib/traceback";
+import { ChevronRight, ChevronDown, Folder, Plus, Loader2, Trash2 } from "lucide-react";
+import { archiveItem, createFolder, listItems } from "@/lib/traceback";
 import { ApiError, Item } from "@/lib/types";
 import { useToast } from "./Toast";
 
@@ -45,11 +46,11 @@ export function FolderTree({
       {error && <div className="py-2 text-[12px] text-danger">Could not load this folder.</div>}
 
       {folders.map((folder) => (
-        <FolderNode key={folder.id} folder={folder} categoryId={categoryId} depth={depth} />
+        <FolderNode key={folder.id} folder={folder} categoryId={categoryId} depth={depth} onArchived={() => void mutate()} />
       ))}
 
       {files.map((item) => (
-        <FileRow key={item.id} item={item} />
+        <FileRow key={item.id} item={item} onArchived={() => void mutate()} />
       ))}
 
       <div className="flex items-center gap-3 py-1">
@@ -145,23 +146,41 @@ function FolderNode({
   folder,
   categoryId,
   depth,
+  onArchived,
 }: {
   folder: Item;
   categoryId: string;
   depth: number;
+  onArchived: () => void;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const expanded = searchParams.getAll("expanded").includes(folder.id);
+
+  function toggleExpanded() {
+    const params = new URLSearchParams(window.location.search);
+    const ids = params.getAll("expanded").filter((id) => id !== folder.id);
+    if (!expanded) ids.push(folder.id);
+    params.delete("expanded");
+    ids.forEach((id) => params.append("expanded", id));
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `${pathname}?${query}` : pathname);
+  }
 
   return (
     <div>
-      <button
-        onClick={() => setExpanded((v) => !v)}
-        className="flex w-full items-center gap-2 border-b border-hairline py-2 text-left hover:bg-paper-strong"
-      >
-        {expanded ? <ChevronDown size={13} className="text-ink-faint" /> : <ChevronRight size={13} className="text-ink-faint" />}
-        <Folder size={13} className="text-ink-faint" />
-        <span className="font-serif text-[14px] text-ink">{folder.title}</span>
-      </button>
+      <div className="flex items-center border-b border-hairline hover:bg-paper-strong">
+        <button
+          onClick={toggleExpanded}
+          aria-expanded={expanded}
+          className="flex min-w-0 flex-1 items-center gap-2 py-2 text-left"
+        >
+          {expanded ? <ChevronDown size={13} className="flex-none text-ink-faint" /> : <ChevronRight size={13} className="flex-none text-ink-faint" />}
+          <Folder size={13} className="flex-none text-ink-faint" />
+          <span className="truncate font-serif text-[14px] text-ink">{folder.title}</span>
+        </button>
+        <DeleteButton item={folder} onArchived={onArchived} />
+      </div>
       {expanded && (
         <FolderTree
           categoryId={categoryId}
@@ -173,12 +192,46 @@ function FolderNode({
   );
 }
 
-function FileRow({ item }: { item: Item }) {
+function FileRow({ item, onArchived }: { item: Item; onArchived: () => void }) {
   const href = item.item_type === "project" ? `/projects/${item.id}` : `/notes/${item.id}`;
   return (
-    <Link href={href} className="flex items-center gap-2 border-b border-hairline py-2 pl-5 hover:bg-paper-strong">
-      <span className="w-10 flex-none text-[10px] uppercase tracking-wide text-ink-faint">{item.item_type}</span>
-      <span className="truncate font-serif text-[14px] text-ink">{item.title}</span>
-    </Link>
+    <div className="flex items-center border-b border-hairline hover:bg-paper-strong">
+      <Link href={href} className="flex min-w-0 flex-1 items-center gap-2 py-2 pl-5">
+        <span className="w-10 flex-none text-[10px] uppercase tracking-wide text-ink-faint">{item.item_type}</span>
+        <span className="truncate font-serif text-[14px] text-ink">{item.title}</span>
+      </Link>
+      {item.item_type === "note" && <DeleteButton item={item} onArchived={onArchived} />}
+    </div>
+  );
+}
+
+function DeleteButton({ item, onArchived }: { item: Item; onArchived: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+
+  async function archive() {
+    setBusy(true);
+    try {
+      await archiveItem(item.id, item.version);
+      onArchived();
+      toast.push(item.item_type === "folder" ? "Folder moved to Archive. Its contents remain active." : "Note moved to Archive.", "success");
+    } catch (err) {
+      toast.push(err instanceof ApiError ? err.message : "Could not delete this item.", "error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={() => void archive()}
+      disabled={busy}
+      aria-label={`Delete ${item.item_type} ${item.title}`}
+      title="Move to Archive"
+      className="flex h-8 w-8 flex-none items-center justify-center rounded text-ink-faint hover:bg-paper-strong hover:text-danger disabled:opacity-50"
+    >
+      <Trash2 size={14} aria-hidden />
+    </button>
   );
 }

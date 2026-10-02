@@ -41,12 +41,6 @@ npm run lint
 npm run build -- --webpack
 ```
 
-The final verified baseline at commit `916d557` was 29 frontend tests passing, with type checking, lint, and the webpack production build passing. See [the repository validation record](../docs/backend-validation.md) for the full backend/frontend baseline.
+The final verified baseline at commit `916d557` was 29 frontend tests passing, with type checking, lint, and the webpack production build passing.
 
-## Relevant documentation
-
-- [Current project status](../docs/current-status.md)
-- [Local stack startup](../docs/local-development.md)
-- [UI behavior and product decisions](../docs/ui-plan.md)
-- [Frontend design QA](../design-qa.md)
-- [Implemented REST API](../docs/backend-api.md)
+Private development notes are kept locally under ignored `docs/` in the repository root.

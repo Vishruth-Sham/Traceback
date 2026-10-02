@@ -143,24 +143,40 @@ async function record(ms: number) {
 }
 
 describe("single global command panel", () => {
-  it("records from the panel without the removed bottom bar", async () => {
+  it("does not start recording on Option + Space, including in the command input", async () => {
     await mount();
-    await click("Record voice command");
+    fireEvent.keyDown(window, { key: " ", code: "Space", altKey: true });
+    fireEvent.keyUp(window, { key: " ", code: "Space", altKey: true });
+    const input = screen.getByRole("textbox", { name: "Command" });
+    fireEvent.keyDown(input, { key: " ", code: "Space", altKey: true });
+    fireEvent.keyUp(input, { key: " ", code: "Space", altKey: true });
+    expect(state()).toBe("idle");
+    expect(getUserMedia).not.toHaveBeenCalled();
+  });
+
+  it("records from the global command bar", async () => {
+    await mount();
+    expect(screen.getByPlaceholderText("Ask or give a command…")).toBeInTheDocument();
+    expect(screen.queryByText("Hold ⌥ Option + Space to speak")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Voice command" })).toHaveAttribute("title", "Voice command");
+    await click("Voice command");
     expect(state()).toBe("recording");
+    expect(screen.getByPlaceholderText("Listening…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Voice command" })).not.toBeInTheDocument();
     await act(async () => vi.advanceTimersByTime(1000));
-    await click("Stop and send");
+    await click("Stop voice command");
     expect(uploadVoiceCapture).toHaveBeenCalledTimes(1);
     expect(uploadVoiceCapture.mock.calls[0][0].entryPoint).toBe("global");
   });
 
-  it("types a command from the panel and retains its retry key after a failed response", async () => {
+  it("submits a typed command from the bar and retains its retry key after a failed response", async () => {
     createCapture.mockRejectedValueOnce(new Error("connection lost"));
     await mount();
-    await click("Type instead");
-    fireEvent.change(screen.getByLabelText("Type a command"), { target: { value: "What are my tasks?" } });
-    await click("Send command");
+    const input = screen.getByRole("textbox", { name: "Command" });
+    fireEvent.change(input, { target: { value: "What are my tasks?" } });
+    await act(async () => { fireEvent.submit(input.closest("form")!); });
     expect(screen.getByRole("alert")).toHaveTextContent("Could not send the command");
-    await click("Send command");
+    await act(async () => { fireEvent.submit(input.closest("form")!); });
     expect(createCapture).toHaveBeenCalledTimes(2);
     expect(createCapture.mock.calls[1]).toEqual(createCapture.mock.calls[0]);
     expect(createCapture.mock.calls[0][0]).toMatchObject({

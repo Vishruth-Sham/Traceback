@@ -60,8 +60,6 @@ _TOOLS = [
     (captures.delete_capture_permanently, "Permanently delete capture", DESTROY),
     (captures.retry_capture, "Retry capture processing", MUTATE),
     (captures.apply_capture_interpretation, "Apply capture interpretation", MUTATE),
-    (captures.accept_capture_proposal, "Accept capture proposal", MUTATE),
-    (captures.get_capabilities, "Get voice capabilities", READ),
     # Provenance
     (sources.get_item_sources, "Get item sources", READ),
     (sources.link_item_source, "Link item source", MUTATE),
