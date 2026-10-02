@@ -1,63 +1,129 @@
-# Traceback
+<div align="center">
+  <img src="assets/readme-mark.svg" width="108" height="108" alt="Traceback logo" />
 
-A local-first personal capture and organization application for preserving thoughts and references alongside notes, tasks, projects, and folders through its own UI and MCP.
+  <h1>Traceback</h1>
 
-The local FastAPI REST API implements manual notes, tasks, projects and nested folders, fixed categories, deadlines, single-parent containment, other relationships, Inbox placement, version conflicts, archive/restore, immutable captures, local attachments, source links, and durable processing state. A bounded REST-only processor supports local whisper.cpp transcription and validated Ollama `qwen3.5:4b` interpretation; typed captures skip transcription. Free-text task quick add creates one structured task, while note quick add presents a location proposal for review before saving. A local stdio MCP adapter exposes the same business rules to Codex and Claude Code without direct database access. The desktop Next.js frontend uses those canonical IDs and APIs.
+  <p><strong>Keep the thought. Find the thread.</strong></p>
+  <p>A local home for notes, tasks, projects, and the things you'll want to remember later.</p>
 
-Opt-in, review-first voice commands (off by default) save the audio first, transcribe and interpret it locally, and show a proposal you accept, edit, or discard. Nothing is applied automatically. Recognition and command-understanding quality on real voice has not been benchmarked.
+  <p>
+    <a href="#get-started">Get started</a> ·
+    <a href="#what-you-can-do">Explore features</a> ·
+    <a href="#how-it-works">How it works</a>
+  </p>
 
-Reminders, automatic Inbox aging, the personal-memory graph, hosted deployment, and mobile are not implemented.
+  <p>
+    <a href="https://github.com/Vishruth-Sham/Traceback/releases/tag/v0.1.1"><img src="https://img.shields.io/badge/release-v0.1.1-2f3e68?style=flat-square" alt="Release v0.1.1" /></a>
+    <img src="https://img.shields.io/badge/platform-macOS-8a7f61?style=flat-square" alt="macOS" />
+    <img src="https://img.shields.io/badge/data-local-3f5a3c?style=flat-square" alt="Local data" />
+  </p>
+</div>
 
-## Run locally
+---
 
-Install Python 3.12–3.14, uv, and PostgreSQL 17 (`brew install postgresql@17`), then run from this directory:
+## What you can do
+
+| | |
+|---|---|
+| **Catch ideas quickly** | Save a note or task from the app's quick add flow, then organize it when you're ready. |
+| **Keep things together** | Nest folders, connect related items, and move work between categories, projects, and Inbox. |
+| **Find your way back** | Search across your items and follow folder paths from a note to where it belongs. |
+| **Stay in control** | Review changes, archive and restore items, and keep the original text of each capture. |
+| **Work with your tools** | Use the local MCP adapter from Codex or Claude Code through the same API as the app. |
+
+Traceback runs on your Mac. The app, API, PostgreSQL database, and optional processing tools stay local; there is no hosted account or cloud fallback.
+
+## Get started
+
+**Requirements:** macOS, Python 3.12–3.14, [uv](https://docs.astral.sh/uv/), Node.js, and PostgreSQL 17 (`brew install postgresql@17`).
+
+1. Install dependencies and create the local database:
+
+   ```sh
+   uv sync --extra test --locked
+   npm --prefix frontend ci
+   python3 scripts/local_db.py init
+   ```
+
+   Database credentials and the API token are generated in the ignored root `.env` file. Existing local data is preserved.
+
+2. Create the ignored `frontend/.env.local` file with the API token from `.env`:
+
+   ```dotenv
+   TRACEBACK_API_BASE_URL=http://127.0.0.1:8000
+   TRACEBACK_API_TOKEN=<copy TRACEBACK_API_TOKEN from the root .env>
+   ```
+
+3. Stop the setup database, build the launcher, and open the app:
+
+   ```sh
+   python3 scripts/local_db.py stop
+   bash scripts/build_mac_launcher.sh
+   open Traceback.app
+   ```
+
+The launcher starts the local services and opens `http://localhost:3000`. Quit the app to stop services it started. On later visits, just open `Traceback.app`.
+
+<details>
+<summary>Run services without the Mac launcher</summary>
 
 ```sh
-uv sync --extra test --locked
-python3 scripts/local_db.py init
+python3 scripts/local_db.py start
 .venv/bin/alembic upgrade head
 .venv/bin/uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
-The setup generates private credentials in ignored `.env` and `.local/traceback/`, and starts a project-local PostgreSQL cluster on `127.0.0.1:55432`. It preserves existing configuration and data. The API requires `Authorization: Bearer <TRACEBACK_API_TOKEN>` from `.env`. Do not expose these local services remotely.
-
-Run the PostgreSQL acceptance suite with `.venv/bin/pytest -q` after database setup; it creates and removes its own fresh database and does not reset the application database.
-
-Start the desktop UI in a second terminal:
+In another terminal:
 
 ```sh
-cd frontend
-npm install
-npm run dev
+npm --prefix frontend run dev
 ```
 
-Open `http://localhost:3000`. The frontend's ignored `.env.local` must contain the same API token generated for the backend; see the local-development guide for the exact configuration.
+Open `http://localhost:3000`. The same `frontend/.env.local` file is required.
 
-On macOS, after first-time setup, double-click `Traceback.app` in this folder to start the local stack in the background and open the UI. Quit the app to stop its services. If the app is absent in a new checkout, create it with `bash scripts/build_mac_launcher.sh`.
+</details>
 
-The processor handles at most one pending capture per invocation; run it once with:
+## How it works
 
-```sh
-python3 scripts/model_setup.py
-.venv/bin/python -m processor.runner
+```mermaid
+flowchart LR
+  UI["Traceback UI"] --> API["Local API"]
+  MCP["Codex / Claude Code via MCP"] --> API
+  API --> DB[(PostgreSQL)]
+  Processor["Optional local processor"] --> API
 ```
 
-or keep it running unattended in the background with the local scheduler/lifecycle wrapper (no launchd/cron registration, nothing outside this checkout):
+The Next.js interface talks to a local FastAPI service through a same-origin proxy, so the API token stays out of browser JavaScript. The MCP adapter uses that same API rather than connecting to the database directly. Optional local models can help process captures; manual notes and tasks work without them.
 
-```sh
-python3 scripts/processor_service.py start
-python3 scripts/processor_service.py status
-python3 scripts/processor_service.py stop
-```
+| Directory | Purpose |
+|---|---|
+| `frontend/` | App interface and local API proxy |
+| `backend/` | REST API and data rules |
+| `traceback_mcp/` | Local MCP adapter |
+| `processor/` | Optional local capture processing |
+| `scripts/` | Database, launcher, and model setup |
 
-Use `python3 scripts/model_setup.py --install` only when the reported local dependencies are missing; it downloads model files outside this repository.
+<details>
+<summary>Optional MCP and local models</summary>
 
-Run the local MCP stdio adapter, once the API above is running, with:
+With the app running, start the stdio MCP adapter with:
 
 ```sh
 .venv/bin/python -m traceback_mcp
 ```
 
-Automatic Inbox movement is disabled. No model is required for manual operations, and there is no cloud fallback. Both the backend and Ollama URLs are validated as plain-HTTP loopback addresses.
+To check local model dependencies before downloading anything:
 
-Private development notes are kept locally under ignored `docs/`.
+```sh
+python3 scripts/model_setup.py
+```
+
+Run `python3 scripts/model_setup.py --install` only if you want the missing models installed. The script reports download sizes first.
+
+</details>
+
+---
+
+<div align="center">
+  <sub>Your data and credentials live in ignored local files. See <code>.env.example</code> for configuration options.</sub>
+</div>
