@@ -70,8 +70,7 @@ export function Sidebar() {
       </div>
 
       <div className="mt-auto flex flex-col gap-0.5 border-t border-hairline pt-4">
-        <NavItem href="/skills" label="Skills" active={pathname.startsWith("/skills")} />
-        <div className="mt-3 flex items-center gap-2 px-3">
+        <div className="flex items-center gap-2 px-3">
           <span className="flex h-6 w-6 flex-none items-center justify-center rounded-full bg-accent-gold text-[11px] font-semibold text-paper">
             Y
           </span>
