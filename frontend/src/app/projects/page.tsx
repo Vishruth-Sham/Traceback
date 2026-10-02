@@ -12,6 +12,7 @@ import { ItemDetailPanel } from "@/components/ItemDetailPanel";
 import { useDetailPanel } from "@/lib/useDetailPanel";
 import { PageHeader } from "@/components/PageHeader";
 import Link from "next/link";
+import { useUrlParameter } from "@/lib/useUrlParameter";
 
 const SWATCHES = ["#c1962f", "#2f3e68", "#3f5a3c", "#7a4a63", "#9a5a26"];
 
@@ -24,7 +25,7 @@ function swatchFor(id: string): string {
 function ProjectsPageInner() {
   const { categories } = useCategories();
   const projectsCategory = categoryBySlug(categories, "projects");
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useUrlParameter("q");
   const [adding, setAdding] = useState(false);
   const { data, error, isLoading, mutate } = useSWR(
     projectsCategory ? `projects:${projectsCategory.id}:${query}` : null,

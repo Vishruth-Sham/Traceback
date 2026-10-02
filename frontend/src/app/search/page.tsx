@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense } from "react";
 import useSWR from "swr";
 import { Search as SearchIcon } from "lucide-react";
 import { listItems } from "@/lib/traceback";
@@ -9,9 +9,10 @@ import { EmptyState, ErrorState, LoadingState } from "@/components/StateViews";
 import { ItemDetailPanel } from "@/components/ItemDetailPanel";
 import { useDetailPanel } from "@/lib/useDetailPanel";
 import { PageHeader } from "@/components/PageHeader";
+import { useUrlParameter } from "@/lib/useUrlParameter";
 
 function SearchPageInner() {
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useUrlParameter("q");
   const { openId, open, close } = useDetailPanel();
   const { data, error, isLoading } = useSWR(
     query.trim().length > 1 ? `search:${query}` : null,

@@ -9,10 +9,10 @@ const typeLabel: Record<string, string> = {
   note: "note",
   task: "task",
   project: "project",
+  folder: "folder",
 };
 
-// Notes and projects open as their own full page (matching the mockup's
-// "Note preview + edit" view); only tasks open in the structured side panel.
+// Notes, projects, and folders open as pages; only tasks use the side panel.
 export function ItemRow({ item, onOpenTask }: { item: Item; onOpenTask: (id: string) => void }) {
   const deadline = item.item_type === "task" ? formatDeadline(item) : null;
 
@@ -45,6 +45,13 @@ export function ItemRow({ item, onOpenTask }: { item: Item; onOpenTask: (id: str
   if (item.item_type === "project") {
     return (
       <Link href={`/projects/${item.id}`} className={rowClass}>
+        {content}
+      </Link>
+    );
+  }
+  if (item.item_type === "folder") {
+    return (
+      <Link href={`/folders/${item.id}`} className={rowClass}>
         {content}
       </Link>
     );

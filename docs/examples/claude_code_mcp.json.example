@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "traceback": {
-      "command": "/absolute/path/to/Traceback/.venv/bin/python",
-      "args": ["-m", "traceback_mcp"]
-    }
-  }
-}

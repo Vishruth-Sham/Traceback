@@ -13,11 +13,13 @@ import { useDetailPanel } from "@/lib/useDetailPanel";
 import { useToast } from "@/components/Toast";
 import { PageHeader } from "@/components/PageHeader";
 import { Segmented } from "@/components/Segmented";
+import { useUrlParameter } from "@/lib/useUrlParameter";
 
 type Filter = "open" | "completed";
 
 function TasksPageInner() {
-  const [filter, setFilter] = useState<Filter>("open");
+  const [storedFilter, setStoredFilter] = useUrlParameter("status", "open");
+  const filter: Filter = storedFilter === "completed" ? "completed" : "open";
   const { openId, open, close } = useDetailPanel();
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const toast = useToast();
@@ -66,7 +68,7 @@ function TasksPageInner() {
 
       <Segmented
         value={filter}
-        onChange={setFilter}
+        onChange={setStoredFilter}
         options={[
           { value: "open", label: "open" },
           { value: "completed", label: "completed" },

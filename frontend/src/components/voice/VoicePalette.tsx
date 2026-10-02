@@ -1,15 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { AlertTriangle, Check } from "lucide-react";
+import { AlertTriangle, Check, Mic } from "lucide-react";
 import { ApiError } from "@/lib/types";
 import type { VoiceQueryFooterAction, VoiceQueryMatch } from "@/lib/types";
 import styles from "./VoicePalette.module.css";
 
 export type PaletteView =
-  | { kind: "idle"; shortcutLabel: string }
-  | { kind: "typing" }
-  | { kind: "recording"; elapsedMs: number; maxMs: number; shortcutLabel: string }
+  | { kind: "idle" }
+  | { kind: "recording"; elapsedMs: number; maxMs: number }
   | { kind: "processing"; queryText: string | null; progressLabel?: string }
   | {
       kind: "result";
@@ -33,16 +32,8 @@ export interface VoicePaletteProps {
   onFooterAction: (action: VoiceQueryFooterAction) => void;
   onOpenSettings: () => void;
   onStartRecording: () => void;
-  onStartTyping: () => void;
-  onCancelTyping: () => void;
   onSubmitTyped: (text: string) => Promise<void>;
   onStopRecording: () => void;
-  onCancelRecording: () => void;
-}
-
-function formatClock(ms: number): string {
-  const total = Math.floor(ms / 1000);
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, "0")}`;
 }
 
 function MatchRow({ match, index, numbered, onSelect }: { match: VoiceQueryMatch; index: number; numbered?: boolean; onSelect: (m: VoiceQueryMatch) => void }) {
@@ -62,11 +53,12 @@ function MatchRow({ match, index, numbered, onSelect }: { match: VoiceQueryMatch
  * The global voice panel aligns with the page's content column in every state.
  * Recording and navigation logic lives in VoiceCommandProvider.
  */
-export function VoicePalette({ view, onDismiss, onSelect, onFooterAction, onOpenSettings, onStartRecording, onStartTyping, onCancelTyping, onSubmitTyped, onStopRecording, onCancelRecording }: VoicePaletteProps) {
+export function VoicePalette({ view, onDismiss, onSelect, onFooterAction, onOpenSettings, onStartRecording, onSubmitTyped, onStopRecording }: VoicePaletteProps) {
   const [typedText, setTypedText] = useState("");
   const [typedBusy, setTypedBusy] = useState(false);
   const [typedError, setTypedError] = useState<string | null>(null);
-  const rest = view.kind !== "recording" && view.kind !== "processing";
+  const recording = view.kind === "recording";
+  const showDetails = view.kind !== "idle" && !recording;
 
   async function submitTyped(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -87,77 +79,7 @@ export function VoicePalette({ view, onDismiss, onSelect, onFooterAction, onOpen
   return (
     <div className={styles.root}>
       <div className={styles.dock} role="region" aria-label="Voice command">
-        <div className={`${styles.panel} ${rest ? styles.panelRest : ""}`}>
-          {view.kind === "idle" && (
-            <div className={styles.hintsIdle}>
-              <span className={styles.dotIdle} aria-hidden />
-              <span>Hold <b>{view.shortcutLabel}</b> to speak</span>
-              <button type="button" className={`${styles.btn} ${styles.btnPrimary} ${styles.startButton}`} onClick={onStartRecording}>
-                Record voice command
-              </button>
-              <button type="button" className={`${styles.btn} ${styles.btnGhost}`} onClick={onStartTyping}>
-                Type instead
-              </button>
-            </div>
-          )}
-
-          {view.kind === "typing" && (
-            <form onSubmit={(event) => void submitTyped(event)}>
-              <label htmlFor="voice-typed-command" className={styles.typeLabel}>Type a command</label>
-              <textarea
-                id="voice-typed-command"
-                autoFocus
-                value={typedText}
-                onChange={(event) => { setTypedText(event.target.value); setTypedError(null); }}
-                placeholder="Add a task, find a note, or open a project…"
-                disabled={typedBusy}
-                className={styles.typeInput}
-                rows={3}
-              />
-              {typedError && <div role="alert" className={styles.errTitle}>{typedError}</div>}
-              <div className={styles.footer}>
-                <button
-                  type="button"
-                  className={`${styles.btn} ${styles.btnGhost}`}
-                  onClick={() => { setTypedText(""); setTypedError(null); onCancelTyping(); }}
-                  disabled={typedBusy}
-                >Cancel</button>
-                <button type="submit" className={`${styles.btn} ${styles.btnPrimary}`} disabled={typedBusy || !typedText.trim()}>
-                  {typedBusy ? "Sending…" : "Send command"}
-                </button>
-              </div>
-            </form>
-          )}
-
-          {view.kind === "recording" && (
-            <>
-              <div className={styles.row1}>
-                <div className={styles.status}>
-                  <span className={styles.dot} aria-hidden /> Recording&hellip;
-                </div>
-                <div className={styles.time}>{formatClock(view.elapsedMs)}</div>
-              </div>
-              <div className={styles.wave} aria-hidden>
-                {Array.from({ length: 7 }, (_, i) => (
-                  <span key={i} style={{ height: `${8 + ((i * 7) % 14)}px`, animationDelay: `${i * 80}ms` }} />
-                ))}
-              </div>
-              <div className={styles.hints}>
-                <span>
-                  Release <b>{view.shortcutLabel}</b> or use Stop and send
-                </span>
-                <span>
-                  <button type="button" onClick={onCancelRecording} className={styles.btnGhost} style={{ border: "none", padding: 0, background: "none" }}>
-                    <b>Esc</b> to cancel
-                  </button>
-                </span>
-              </div>
-              <button type="button" onClick={onStopRecording} className={`${styles.btn} ${styles.btnPrimary}`}>
-                Stop and send
-              </button>
-            </>
-          )}
-
+        {showDetails && <div className={styles.panel}>
           {view.kind === "processing" && (
             <>
               {view.queryText && <div className={styles.query}>{view.queryText}</div>}
@@ -272,7 +194,29 @@ export function VoicePalette({ view, onDismiss, onSelect, onFooterAction, onOpen
           )}
 
           {view.kind === "cancelled" && <div className={styles.note} style={{ margin: 0 }}>Cancelled &mdash; nothing was sent.</div>}
-        </div>
+        </div>}
+        {typedError && <div role="alert" className={styles.typedError}>{typedError}</div>}
+        <form className={styles.commandBar} onSubmit={(event) => void submitTyped(event)}>
+          <input
+            id="voice-typed-command"
+            type="text"
+            aria-label="Command"
+            value={typedText}
+            onChange={(event) => { setTypedText(event.target.value); setTypedError(null); }}
+            placeholder={recording ? "Listening…" : "Ask or give a command…"}
+            disabled={typedBusy || recording}
+            className={styles.commandInput}
+          />
+          <button
+            type="button"
+            className={styles.micButton}
+            onClick={recording ? onStopRecording : onStartRecording}
+            aria-label={recording ? "Stop voice command" : "Voice command"}
+            title={recording ? "Stop and send" : "Voice command"}
+          >
+            {recording ? <span className={styles.dot} aria-hidden /> : <Mic size={16} aria-hidden />}
+          </button>
+        </form>
       </div>
     </div>
   );

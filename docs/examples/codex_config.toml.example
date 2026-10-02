@@ -1,6 +1,0 @@
-# Append this section to Codex's config.toml (see docs/mcp-adapter.md for
-# where Codex looks for it). No secrets: the adapter reads TRACEBACK_API_TOKEN
-# from this project's ignored .env at startup.
-[mcp_servers.traceback]
-command = "/absolute/path/to/Traceback/.venv/bin/python"
-args = ["-m", "traceback_mcp"]
