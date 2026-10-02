@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Plus, Search } from "lucide-react";
 import { CATEGORY_LABELS, CATEGORY_SLUGS } from "@/lib/traceback";
+import appPackage from "../../package.json";
 import { Logo } from "./Logo";
 
 function NavItem({ href, label, active }: { href: string; label: string; active: boolean }) {
@@ -75,6 +76,7 @@ export function Sidebar() {
             Y
           </span>
           <span className="text-[12.5px] text-ink-muted">You</span>
+          <span className="ml-auto text-[11px] text-ink-faint">v{appPackage.version}</span>
         </div>
       </div>
     </aside>
