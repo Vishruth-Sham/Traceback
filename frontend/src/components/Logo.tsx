@@ -1,6 +1,4 @@
-// Mark from "initial UI views/Modern minimal UI design/Traceback Logo (standalone).html":
-// three receding square frames (brightness progression back-to-front) with a
-// trace line and node on the frontmost frame. Colors per spec's light-ground variant.
+// Three receding square frames with a trace line and node on the front frame.
 export function Logo({ size = 24, className }: { size?: number; className?: string }) {
   return (
     <svg width={size} height={size} viewBox="40 38 158 158" className={className} aria-hidden="true">
