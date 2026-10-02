@@ -6,7 +6,7 @@ The local FastAPI REST API implements manual notes, tasks, projects and nested f
 
 Opt-in, review-first voice commands (off by default) save the audio first, transcribe and interpret it locally, and show a proposal you accept, edit, or discard. Nothing is applied automatically. Recognition and command-understanding quality on real voice has not been benchmarked.
 
-Reminders, automatic Inbox aging, the personal-memory graph, hosted deployment, and mobile are not implemented. The Skills page is a static capability register, except that its Voice commands entry follows the server's capabilities.
+Reminders, automatic Inbox aging, the personal-memory graph, hosted deployment, and mobile are not implemented.
 
 ## Run locally
 
