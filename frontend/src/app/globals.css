@@ -53,3 +53,14 @@ select,
 button {
   font-family: inherit;
 }
+
+.note-markdown {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.note-markdown pre {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
+}

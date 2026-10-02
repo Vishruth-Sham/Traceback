@@ -75,13 +75,25 @@ def list_projects(archived: bool = False, q: str | None = None, cursor: str | No
 
 
 @guarded
-def search_items(q: str, item_type: Literal["note", "task", "project", "folder"] | None = None, cursor: str | None = None, limit: int = 25) -> dict:
+def search_items(
+    query: str | None = None,
+    item_type: Literal["note", "task", "project", "folder"] | None = None,
+    cursor: str | None = None,
+    limit: int = 25,
+    q: str | None = None,
+) -> dict:
     """Keyword search over item titles and content. A wrapper over `list_items(q=...)`.
 
+    Pass the search text as `query`; `q` is also accepted for existing clients.
     Excludes archived items and does not search original capture text; use
     `list_captures(q=...)` to search source captures directly.
     """
-    return get_client().list_items(q=q, item_type=item_type, cursor=cursor, limit=bounded_limit(limit))
+    if (query is None and q is None) or (query is not None and q is not None and query != q):
+        from traceback_mcp.rest_client import RestError
+
+        raise RestError(422, "invalid_input", "Provide one search query using query or q", {})
+    search_text = query if query is not None else q
+    return get_client().list_items(q=search_text, item_type=item_type, cursor=cursor, limit=bounded_limit(limit))
 
 
 @guarded

@@ -1,27 +1,53 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
 import { marked } from "marked";
 import { ArrowLeft, Archive as ArchiveIcon, ArchiveRestore, Trash2, History } from "lucide-react";
 import { archiveItem, deleteItemPermanently, getItem, moveItem, patchItem, restoreItem } from "@/lib/traceback";
-import { useCategories, categoryName } from "@/lib/useCategories";
+import { useCategories } from "@/lib/useCategories";
 import { ApiError, Item } from "@/lib/types";
 import { useToast } from "@/components/Toast";
 import { RelationsSection } from "@/components/RelationsSection";
 import { HistoryList } from "@/components/HistoryList";
 import { LoadingState, ErrorState } from "@/components/StateViews";
 
+function parentIdOf(item: Item): string | undefined {
+  return item.relations.find((relation) => relation.relation === "part_of" && relation.from_item_id === item.id)?.to_item_id;
+}
+
+async function loadAncestors(item: Item): Promise<Item[]> {
+  const ancestors: Item[] = [];
+  const seen = new Set([item.id]);
+  let parentId = parentIdOf(item);
+  while (parentId && !seen.has(parentId)) {
+    seen.add(parentId);
+    const parent = await getItem(parentId);
+    ancestors.unshift(parent);
+    parentId = parentIdOf(parent);
+  }
+  return ancestors;
+}
+
+function itemLocation(item: Item): string {
+  return item.item_type === "project" ? `/projects/${item.id}` : `/folders/${item.id}`;
+}
+
 export default function NoteDetailPage() {
   const params = useParams<{ id: string }>();
   const noteId = params.id;
   const router = useRouter();
   const toast = useToast();
-  const { categories } = useCategories();
+  const { categories, isLoading: categoriesLoading } = useCategories();
   const { mutate: globalMutate } = useSWRConfig();
 
   const { data: item, error, isLoading, mutate } = useSWR<Item>(`item:${noteId}`, () => getItem(noteId));
+  const { data: ancestors, error: pathError, isLoading: pathLoading, mutate: retryPath } = useSWR(
+    item ? `note-ancestors:${item.id}:${item.version}` : null,
+    () => loadAncestors(item!),
+  );
 
   const [mode, setMode] = useState<"preview" | "edit">("preview");
   const [title, setTitle] = useState("");
@@ -118,15 +144,37 @@ export default function NoteDetailPage() {
   if (isLoading) return <div className="mx-auto max-w-[760px] px-10 py-10"><LoadingState label="Loading note…" /></div>;
   if (error || !item) return <div className="mx-auto max-w-[760px] px-10 py-10"><ErrorState message="Could not load this note." onRetry={() => mutate()} /></div>;
 
-  const category = categoryName(categories, item.category_id);
+  const category = categories.find((entry) => entry.id === item.category_id);
+  const locations = [
+    { label: category?.name ?? "Inbox", href: category ? `/category/${category.slug}` : "/inbox" },
+    ...(ancestors ?? []).map((ancestor) => ({ label: ancestor.title, href: itemLocation(ancestor) })),
+  ];
+  const parentLocation = locations[locations.length - 1];
+  const locationLoading = pathLoading || (Boolean(item.category_id) && categoriesLoading);
 
   return (
     <div className="mx-auto max-w-[760px] px-10 py-10 pb-32">
-      <div className="mb-3 flex items-center justify-between">
-        <button onClick={() => router.back()} className="flex items-center gap-1.5 text-[12px] text-ink-faint hover:text-ink">
-          <ArrowLeft size={13} />
-          <span className="text-[12.5px]">{category ?? "Inbox"} / {item.title}</span>
-        </button>
+      <div className="mb-3 flex items-start justify-between gap-3">
+        <nav aria-label="Note location" className="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-[12.5px] text-ink-faint">
+          {!locationLoading && !pathError && (
+            <>
+              <Link href={parentLocation.href} aria-label={`Back to ${parentLocation.label}`} className="mr-1 hover:text-ink">
+                <ArrowLeft size={13} />
+              </Link>
+              {locations.map((location) => (
+                <span key={location.href} className="inline-flex items-center gap-1.5">
+                  <Link href={location.href} className="hover:text-ink">{location.label}</Link>
+                  <span aria-hidden="true">/</span>
+                </span>
+              ))}
+              <span aria-current="page" className="text-ink">{item.title}</span>
+            </>
+          )}
+          {locationLoading && <span>Loading location…</span>}
+          {pathError && !locationLoading && (
+            <button onClick={() => void retryPath()} className="hover:text-ink">Could not load location. Retry</button>
+          )}
+        </nav>
         <div className="flex gap-1">
           <button
             onClick={() => setMode("preview")}
@@ -180,7 +228,7 @@ export default function NoteDetailPage() {
           <>
             <h1 className="mb-3 border-b border-hairline pb-2 font-serif text-[22px] font-semibold text-ink">{item.title}</h1>
             <div
-              className="text-[13.5px] text-ink [&_a]:text-accent-navy [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:font-serif [&_h1]:text-[17px] [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:font-serif [&_h2]:text-[15.5px] [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:font-serif [&_h3]:text-[14.5px] [&_h3]:font-semibold [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_strong]:font-semibold [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
+              className="note-markdown text-[13.5px] text-ink [&_a]:text-accent-navy [&_h1]:mb-2 [&_h1]:mt-4 [&_h1]:font-serif [&_h1]:text-[17px] [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-4 [&_h2]:font-serif [&_h2]:text-[15.5px] [&_h2]:font-semibold [&_h3]:mb-2 [&_h3]:mt-3 [&_h3]:font-serif [&_h3]:text-[14.5px] [&_h3]:font-semibold [&_li]:mb-1 [&_ol]:mb-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:mb-3 [&_strong]:font-semibold [&_ul]:mb-3 [&_ul]:list-disc [&_ul]:pl-5"
               dangerouslySetInnerHTML={{ __html: html }}
             />
           </>
