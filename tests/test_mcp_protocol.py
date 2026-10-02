@@ -52,6 +52,13 @@ async def _run_protocol_check(base_url: str, token: str) -> None:
             created = await session.call_tool("create_item", {"item_type": "note", "title": "protocol test note"})
             assert created.is_error is not True
 
+            search_tool = next(t for t in tools if t.name == "search_items")
+            assert {"query", "q"} <= search_tool.input_schema["properties"].keys()
+            for arguments in ({"query": "protocol test note"}, {"q": "protocol test note"}):
+                found = await session.call_tool("search_items", arguments)
+                assert found.is_error is not True
+                assert "protocol test note" in found.content[0].text
+
             # Destructive call without confirm=true must fail as a structured tool error,
             # not silently perform any deletion or crash the server.
             import json

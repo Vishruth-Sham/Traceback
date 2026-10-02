@@ -31,7 +31,7 @@ just because they might be useful later.
 For a lookup, choose the narrowest useful tool:
 
 - `list_tasks` for open or completed tasks.
-- `search_items` for keywords in item titles and content.
+- `search_items(query=...)` for keywords in item titles and content.
 - `list_items` for a known type, category, project, folder, or Inbox.
 - `list_projects` for project discovery.
 - `list_captures` for original capture text or processing state; item search
