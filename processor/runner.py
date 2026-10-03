@@ -107,12 +107,20 @@ class RestClient:
             headers["Idempotency-Key"] = idempotency_key
         return headers
 
-    def _request(self, method: str, path: str, *, json_body: dict | None = None, idempotency_key: str | None = None) -> Any:
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        json_body: dict | None = None,
+        idempotency_key: str | None = None,
+        timeout: float | None = None,
+    ) -> Any:
         url = self._base_url + path
         data = json.dumps(json_body).encode("utf-8") if json_body is not None else None
         request = urllib.request.Request(url=url, data=data, headers=self._headers(idempotency_key), method=method)
         try:
-            with urllib.request.urlopen(request, timeout=self._timeout) as response:
+            with urllib.request.urlopen(request, timeout=timeout or self._timeout) as response:
                 raw = response.read()
         except urllib.error.HTTPError as exc:
             raw = exc.read()
@@ -155,6 +163,11 @@ class RestClient:
             cursor = result.get("next_cursor")
             if not cursor:
                 return items
+
+    def classify_pending_log_days(self) -> dict:
+        """Ask the backend to classify finished (or, late in the evening, current) log days that have no summary yet."""
+        # A classification is a local-model call per day, so it gets far longer than an ordinary request.
+        return self._request("POST", "/api/v1/log/classify", json_body={"pending_only": True}, timeout=900)
 
     def capabilities(self) -> dict:
         return self._request("GET", "/api/v1/capabilities")

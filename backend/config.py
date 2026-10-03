@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     api_token: str = Field(min_length=24)
     allowed_origins: str = "http://127.0.0.1:3000,http://localhost:3000"
     user_timezone: str = "Asia/Kolkata"
+    # The daily log's logical day starts at this local hour, so a 01:30 entry belongs to the previous day.
+    day_start_hour: int = Field(default=4, ge=0, le=12)
+    # The scheduled pass classifies today once the local hour reaches this; earlier days are classified as soon as they end.
+    log_auto_classify_hour: int = Field(default=22, ge=0, le=23)
     max_page_size: int = Field(default=100, ge=1, le=250)
     asset_dir: Path = Path(".local/traceback/assets")
     max_upload_bytes: int = Field(default=100 * 1024 * 1024, ge=1)

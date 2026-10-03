@@ -9,6 +9,7 @@ from backend.config import get_settings
 import backend.models  # noqa: F401
 import backend.capture_models  # noqa: F401
 import backend.asset_models  # noqa: F401
+import backend.log_models  # noqa: F401
 
 
 config = context.config

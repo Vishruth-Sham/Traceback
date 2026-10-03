@@ -3,9 +3,12 @@ import binascii
 import hmac
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
 
+from alembic.config import Config
+from alembic.script import ScriptDirectory
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.orm import Session, aliased, joinedload
@@ -168,16 +171,19 @@ def live() -> dict[str, str]:
 
 @router.get("/health/ready", dependencies=[Depends(authenticate)])
 def ready(session: SessionDep) -> dict[str, str]:
+    alembic_config = Config()
+    alembic_config.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "migrations"))
+    expected_revision = ScriptDirectory.from_config(alembic_config).get_current_head()
     try:
         revision = session.scalar(text("SELECT version_num FROM alembic_version"))
     except SQLAlchemyError as exc:
         raise DomainError("schema_not_ready", "PostgreSQL migrations have not been applied", 503) from exc
-    if revision != "20260916_0007":
+    if revision != expected_revision:
         raise DomainError(
             "schema_not_ready",
             "PostgreSQL migrations are not current",
             503,
-            {"expected_revision": "20260916_0007", "actual_revision": revision},
+            {"expected_revision": expected_revision, "actual_revision": revision},
         )
     return {"status": "ready"}
 
