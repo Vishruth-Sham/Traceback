@@ -18,10 +18,6 @@ on focusTracebackTab(refreshExisting)
             end repeat
         end tell
     on error
-        if not refreshExisting then
-            tell application "Google Chrome" to activate
-            return true
-        end if
         return false
     end try
     return false
@@ -36,7 +32,9 @@ on startTraceback(refreshExisting)
         with timeout of 180 seconds
             do shell script (quoted form of pythonPath & " " & quoted form of servicePath & " start")
         end timeout
-        if not my focusTracebackTab(refreshExisting) then open location "http://localhost:3000"
+        if not my focusTracebackTab(refreshExisting) then
+            do shell script "/usr/bin/open -a " & quoted form of "Google Chrome" & " " & quoted form of "http://localhost:3000"
+        end if
     on error errorMessage
         display dialog "Traceback could not start:" & return & return & errorMessage buttons {"OK"} default button "OK" with icon stop
     end try

@@ -62,7 +62,7 @@ Traceback runs on your Mac. The app, API, PostgreSQL database, and optional proc
    open Traceback.app
    ```
 
-The launcher starts the local services and opens `http://localhost:3000`. Quit the app to stop services it started. On later visits, just open `Traceback.app`.
+The launcher starts the local services and opens `http://localhost:3000` in Google Chrome. Quit the app to stop services it started. On later visits, just open `Traceback.app`.
 
 <details>
 <summary>Run services without the Mac launcher</summary>

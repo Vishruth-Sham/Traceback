@@ -3,7 +3,6 @@ import binascii
 import hmac
 import uuid
 from datetime import UTC, datetime
-from functools import lru_cache
 from pathlib import Path
 from typing import Annotated, Any, Literal
 from zoneinfo import ZoneInfo
@@ -72,12 +71,6 @@ def authenticate(
 
 
 Auth = Annotated[None, Depends(authenticate)]
-
-
-@lru_cache(maxsize=1)
-def expected_schema_revision() -> str:
-    config = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
-    return ScriptDirectory.from_config(config).get_current_head()
 
 
 def action_context(
@@ -178,11 +171,13 @@ def live() -> dict[str, str]:
 
 @router.get("/health/ready", dependencies=[Depends(authenticate)])
 def ready(session: SessionDep) -> dict[str, str]:
+    alembic_config = Config()
+    alembic_config.set_main_option("script_location", str(Path(__file__).resolve().parent.parent / "migrations"))
+    expected_revision = ScriptDirectory.from_config(alembic_config).get_current_head()
     try:
         revision = session.scalar(text("SELECT version_num FROM alembic_version"))
     except SQLAlchemyError as exc:
         raise DomainError("schema_not_ready", "PostgreSQL migrations have not been applied", 503) from exc
-    expected_revision = expected_schema_revision()
     if revision != expected_revision:
         raise DomainError(
             "schema_not_ready",

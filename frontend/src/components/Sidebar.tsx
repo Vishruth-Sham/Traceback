@@ -54,6 +54,7 @@ export function Sidebar() {
       <nav className="flex flex-col gap-0.5 border-b border-hairline pb-4">
         <NavItem href="/inbox" label="Inbox" active={pathname.startsWith("/inbox")} />
         <NavItem href="/tasks" label="Tasks" active={pathname.startsWith("/tasks")} />
+        <NavItem href="/log" label="Log" active={pathname.startsWith("/log")} />
       </nav>
 
       <div className="flex flex-col gap-0.5 border-b border-hairline py-4">

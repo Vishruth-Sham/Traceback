@@ -3,10 +3,14 @@ import {
   Capture,
   Category,
   Asset,
+  ClassifyResult,
   InboxPage,
   Item,
   ItemType,
   Location,
+  LogCategory,
+  LogDaysPage,
+  LogEntry,
   Page,
   Revision,
   Source,
@@ -307,4 +311,42 @@ export async function unlinkNoteImage(noteId: string, assetId: string, expectedV
 
 export async function itemSources(itemId: string): Promise<Source[]> {
   return api.get<Source[]>(`/items/${itemId}/sources`);
+}
+
+// --- Daily log ---
+
+export async function addLogEntry(text: string): Promise<LogEntry> {
+  return api.post<LogEntry>("/log", { text });
+}
+
+export async function listLogDays(before?: string, limit = 14): Promise<LogDaysPage> {
+  return api.getFresh<LogDaysPage>(`/log/days${qs({ before, limit })}`);
+}
+
+export async function searchLog(q: string, limit = 100): Promise<{ entries: LogEntry[] }> {
+  return api.getFresh<{ entries: LogEntry[] }>(`/log/search${qs({ q, limit })}`);
+}
+
+export async function archiveLogEntry(id: string): Promise<void> {
+  await api.del<void>(`/log/${id}`);
+}
+
+export async function classifyLog(target: { date?: string; all_days?: boolean }): Promise<ClassifyResult> {
+  return api.post<ClassifyResult>("/log/classify", target);
+}
+
+export async function listLogCategories(): Promise<LogCategory[]> {
+  return api.getFresh<LogCategory[]>("/log/categories");
+}
+
+export async function createLogCategory(name: string, description: string): Promise<LogCategory> {
+  return api.post<LogCategory>("/log/categories", { name, description });
+}
+
+export async function updateLogCategory(id: string, patch: { name?: string; description?: string }): Promise<LogCategory> {
+  return api.patch<LogCategory>(`/log/categories/${id}`, patch);
+}
+
+export async function deleteLogCategory(id: string): Promise<void> {
+  await api.del<void>(`/log/categories/${id}`);
 }

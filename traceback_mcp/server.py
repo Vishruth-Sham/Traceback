@@ -19,7 +19,7 @@ Imports `MCPServer` from the public `mcp.server` package rather than the
 from mcp.server import MCPServer
 from mcp.types import ToolAnnotations
 
-from traceback_mcp.tools import assets, captures, items, relations, sources, tasks
+from traceback_mcp.tools import assets, captures, items, log, relations, sources, tasks
 
 READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=False)
 MUTATE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
@@ -60,6 +60,15 @@ _TOOLS = [
     (captures.delete_capture_permanently, "Permanently delete capture", DESTROY),
     (captures.retry_capture, "Retry capture processing", MUTATE),
     (captures.apply_capture_interpretation, "Apply capture interpretation", MUTATE),
+    # Daily log (entries are applied immediately; no review step)
+    (log.log_entry, "Log an entry", MUTATE),
+    (log.get_day_log, "Get day log", READ),
+    (log.get_log_range, "Get log range", READ),
+    (log.search_log, "Search log", READ),
+    (log.classify_log, "Classify log", MUTATE),
+    (log.list_log_categories, "List log categories", READ),
+    (log.save_log_category, "Save log category", MUTATE),
+    (log.delete_log_category, "Delete log category", MUTATE),
     # Provenance
     (sources.get_item_sources, "Get item sources", READ),
     (sources.link_item_source, "Link item source", MUTATE),
