@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+import base64
 from uuid import uuid4
 
 
@@ -152,6 +153,28 @@ def test_asset_bytes_metadata_links_and_reference_aware_delete(client):
     deleted_asset = client.delete(f"/api/v1/assets/{asset['id']}", params={"expected_version": archived["version"], "confirm": True})
     assert deleted_asset.status_code == 200 and deleted_asset.json()["state"] == "deleted"
     assert client.get(f"/api/v1/assets/{asset['id']}").status_code == 404
+
+
+def test_note_image_renders_inline_but_svg_downloads(client):
+    note = client.post("/api/v1/items", json={"item_type": "note", "title": "Illustrated"}).json()
+    png = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jRZkAAAAASUVORK5CYII=")
+    uploaded = client.post("/api/v1/assets?filename=picture.png", content=png, headers={"Content-Type": "image/png"})
+    assert uploaded.status_code == 201, uploaded.text
+    image = uploaded.json()
+    assert image["detected_mime_type"] == "image/png"
+    linked = client.post(f"/api/v1/items/{note['id']}/assets/{image['id']}", json={"expected_version": note["version"]})
+    assert linked.status_code == 200, linked.text
+    assert image["id"] in client.get(f"/api/v1/items/{note['id']}").json()["asset_ids"]
+    content = client.get(f"/api/v1/assets/{image['id']}/content")
+    assert content.content == png
+    assert content.headers["content-type"].startswith("image/png")
+    assert content.headers["content-disposition"].startswith("inline")
+    assert content.headers["x-content-type-options"] == "nosniff"
+
+    svg = client.post("/api/v1/assets?filename=diagram.svg", content=b'<svg xmlns="http://www.w3.org/2000/svg"></svg>', headers={"Content-Type": "image/svg+xml"}).json()
+    svg_content = client.get(f"/api/v1/assets/{svg['id']}/content")
+    assert svg_content.headers["content-type"].startswith("application/octet-stream")
+    assert svg_content.headers["content-disposition"].startswith("attachment")
 
 
 def test_capture_delete_blocked_by_source_link(client):

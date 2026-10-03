@@ -2,6 +2,7 @@ import { api, newIdempotencyKey } from "./apiClient";
 import {
   Capture,
   Category,
+  Asset,
   InboxPage,
   Item,
   ItemType,
@@ -290,6 +291,18 @@ export async function interpretCaptureManually(
 
 export async function uploadAsset(file: File): Promise<{ id: string; version: number }> {
   return api.uploadAsset(file.name, file, newIdempotencyKey());
+}
+
+export async function getAsset(id: string): Promise<Asset> {
+  return api.get<Asset>(`/assets/${id}`);
+}
+
+export async function linkNoteImage(noteId: string, assetId: string, expectedVersion: number): Promise<{ version: number }> {
+  return api.post<{ version: number }>(`/items/${noteId}/assets/${assetId}`, { expected_version: expectedVersion });
+}
+
+export async function unlinkNoteImage(noteId: string, assetId: string, expectedVersion: number): Promise<{ version: number }> {
+  return api.del<{ version: number }>(`/items/${noteId}/assets/${assetId}`, { expected_version: expectedVersion });
 }
 
 export async function itemSources(itemId: string): Promise<Source[]> {
