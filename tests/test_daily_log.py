@@ -191,6 +191,79 @@ def test_classify_all_days_continues_past_a_failed_day(client, monkeypatch):
     assert "2032-03-02" in body["classified_days"]
 
 
+class _Clock:
+    """Stands in for `backend.log.datetime` so 'now' is fixed; nothing else about datetime changes."""
+
+    def __init__(self, monkeypatch, iso):
+        from datetime import datetime as real
+
+        fixed = real.fromisoformat(iso)
+
+        class Fixed(real):
+            @classmethod
+            def now(cls, tz=None):
+                return fixed.astimezone(tz) if tz else fixed
+
+        monkeypatch.setattr("backend.log.datetime", Fixed)
+
+
+def _fake_classifier(monkeypatch, seen):
+    def fake(entries, categories, **_):
+        seen.append([e["text"] for e in entries])
+        return {"labels": [["work"] for _ in entries], "summary": "Auto."}
+
+    monkeypatch.setattr("processor.log_classifier.classify_day", fake)
+
+
+def test_pending_only_classifies_finished_days_but_leaves_today_until_evening(client, monkeypatch):
+    add(client, "finished day", at="2029-06-08T10:00:00+05:30")
+    add(client, "today so far", at="2029-06-10T09:00:00+05:30")
+    seen = []
+    _fake_classifier(monkeypatch, seen)
+    _Clock(monkeypatch, "2029-06-10T12:00:00+05:30")
+    body = client.post("/api/v1/log/classify", json={"pending_only": True}).json()
+    assert body["classified_days"] == ["2029-06-08"]
+    assert seen == [["finished day"]]
+    assert client.get("/api/v1/log/days/2029-06-10").json()["summary"] is None
+
+    # Nothing left for the finished day; today is still waiting for the evening cut-off.
+    assert client.post("/api/v1/log/classify", json={"pending_only": True}).json()["classified_days"] == []
+
+    _Clock(monkeypatch, "2029-06-10T22:30:00+05:30")
+    body = client.post("/api/v1/log/classify", json={"pending_only": True}).json()
+    assert body["classified_days"] == ["2029-06-10"]
+    assert client.get("/api/v1/log/days/2029-06-10").json()["summary"] == "Auto."
+
+
+def test_pending_only_does_not_reclassify_a_day_that_already_has_a_summary(client, monkeypatch):
+    add(client, "already done", at="2029-07-01T10:00:00+05:30")
+    seen = []
+    _fake_classifier(monkeypatch, seen)
+    _Clock(monkeypatch, "2029-07-05T12:00:00+05:30")
+    client.post("/api/v1/log/classify", json={"date": "2029-07-01"})
+    seen.clear()
+    assert client.post("/api/v1/log/classify", json={"pending_only": True}).json()["classified_days"] == []
+    assert seen == []
+
+
+def test_pending_only_swallows_a_model_failure_instead_of_erroring(client, monkeypatch):
+    add(client, "model is down", at="2029-08-01T10:00:00+05:30")
+
+    def down(*_a, **_k):
+        raise ModelUnavailableError("down")
+
+    monkeypatch.setattr("processor.log_classifier.classify_day", down)
+    _Clock(monkeypatch, "2029-08-05T12:00:00+05:30")
+    response = client.post("/api/v1/log/classify", json={"pending_only": True})
+    assert response.status_code == 200
+    assert response.json() == {"classified_days": [], "failed_days": ["2029-08-01"]}
+
+
+def test_pending_only_cannot_be_combined_with_a_date_or_all_days(client):
+    assert client.post("/api/v1/log/classify", json={"pending_only": True, "date": "2029-01-01"}).status_code == 422
+    assert client.post("/api/v1/log/classify", json={"pending_only": True, "all_days": True}).status_code == 422
+
+
 def test_log_requires_authentication(client):
     from fastapi.testclient import TestClient
 

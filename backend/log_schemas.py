@@ -3,7 +3,7 @@ import datetime as dt
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class LogEntryCreate(BaseModel):
@@ -91,6 +91,14 @@ class ClassifyRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     date: dt.date | None = None
     all_days: bool = False
+    # Scheduled catch-up: only days that have entries but no summary yet (see backend.log.classify).
+    pending_only: bool = False
+
+    @model_validator(mode="after")
+    def pending_is_exclusive(self) -> "ClassifyRequest":
+        if self.pending_only and (self.all_days or self.date is not None):
+            raise ValueError("pending_only cannot be combined with date or all_days")
+        return self
 
 
 class ClassifyOut(BaseModel):

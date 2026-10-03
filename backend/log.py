@@ -189,7 +189,9 @@ def classify(body: ClassifyRequest, session: SessionDep, settings: SettingsDep):
     from processor.log_classifier import classify_day
     from processor.config import get_settings as processor_settings
 
-    if body.all_days:
+    if body.pending_only:
+        days = _pending_days(session, settings)
+    elif body.all_days:
         days = list(session.scalars(_active(select(LogEntry.log_date).distinct()).order_by(LogEntry.log_date)))
     else:
         days = [body.date or logical_date(datetime.now(UTC), settings)]
@@ -212,12 +214,12 @@ def classify(body: ClassifyRequest, session: SessionDep, settings: SettingsDep):
         try:
             result = classify_day(entries, categories)
         except ModelUnavailableError as exc:
-            if len(days) == 1:
+            if len(days) == 1 and not body.pending_only:
                 raise DomainError("model_unavailable", "The local model is not reachable. Is Ollama running?", 503) from exc
             failed.append(day)
             continue
         except InterpretationError as exc:
-            if len(days) == 1:
+            if len(days) == 1 and not body.pending_only:
                 raise DomainError("classification_failed", "The local model did not return a usable classification", 502) from exc
             failed.append(day)
             continue
@@ -228,6 +230,27 @@ def classify(body: ClassifyRequest, session: SessionDep, settings: SettingsDep):
         session.commit()
         done.append(day)
     return ClassifyOut(classified_days=done, failed_days=failed)
+
+
+MAX_PENDING_DAYS = 5
+
+
+def _pending_days(session: Session, settings: Settings) -> list[date]:
+    """Days with entries and no summary, oldest first, capped per call.
+
+    A day still in progress is left alone until the local clock reaches `log_auto_classify_hour`, so the scheduled
+    pass does not summarise a day that is half logged. Entries added after a day was classified do not make it
+    pending again; re-run it by hand.
+    """
+    now = datetime.now(UTC).astimezone(ZoneInfo(settings.user_timezone))
+    today = logical_date(now, settings)
+    candidates = _active(select(LogEntry.log_date).distinct()).where(
+        LogEntry.log_date <= today,
+        ~select(DaySummary.log_date).where(DaySummary.log_date == LogEntry.log_date).exists()
+    )
+    if now.hour < settings.log_auto_classify_hour or now.hour < settings.day_start_hour:
+        candidates = candidates.where(LogEntry.log_date < today)
+    return list(session.scalars(candidates.order_by(LogEntry.log_date).limit(MAX_PENDING_DAYS)))
 
 
 def _clear_day(session: Session, day: date, entry_ids: list[uuid.UUID]) -> None:

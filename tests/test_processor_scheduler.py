@@ -125,3 +125,47 @@ def test_scheduler_config_poll_interval_is_bounded():
         _config(poll_interval_s=0)
     with pytest.raises(ValidationError):
         _config(poll_interval_s=999999)
+
+
+class _LogClassifyingRest(FakeRestClient):
+    def __init__(self, capture, fail=False):
+        super().__init__(capture=capture)
+        self.classify_calls = 0
+        self.fail = fail
+
+    def classify_pending_log_days(self):
+        self.classify_calls += 1
+        if self.fail:
+            raise RuntimeError("backend exploded")
+        return {"classified_days": [], "failed_days": []}
+
+
+class _Ticking:
+    def __init__(self, step):
+        self.now = 0.0
+        self.step = step
+
+    def __call__(self):
+        value = self.now
+        self.now += self.step
+        return value
+
+
+def test_log_classify_runs_on_the_first_idle_wake_then_only_once_per_interval():
+    rest = _LogClassifyingRest(capture=None)
+    clock = _Ticking(step=600)  # 10 minutes per wake
+    run_forever(rest=rest, config=_config(log_classify_interval_s=1800), sleep=CountingSleep(), max_iterations=8, clock=clock)
+    # wakes at t=0,600,...,4200 -> classify at 0, 1800, 3600
+    assert rest.classify_calls == 3
+
+
+def test_log_classify_failure_never_stops_the_scheduler():
+    rest = _LogClassifyingRest(capture=None, fail=True)
+    iterations = run_forever(rest=rest, config=_config(), sleep=CountingSleep(), max_iterations=3, clock=_Ticking(step=10_000))
+    assert iterations == 3
+    assert rest.classify_calls == 3
+
+
+def test_scheduler_without_a_log_method_is_unaffected():
+    rest = FakeRestClient(capture=None)
+    assert run_forever(rest=rest, config=_config(), sleep=CountingSleep(), max_iterations=2) == 2

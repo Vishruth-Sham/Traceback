@@ -39,6 +39,8 @@ class SchedulerConfig(RunnerConfig):
     poll_interval_s: float = Field(default=15.0, ge=1, le=3600)
     # Used instead while the backend reports voice commands enabled, so a spoken command is picked up promptly.
     voice_poll_interval_s: float = Field(default=3.0, ge=1, le=3600)
+    # How often to ask the backend to classify daily-log days that are due. The backend decides what is due.
+    log_classify_interval_s: float = Field(default=1800.0, ge=60, le=86400)
 
 
 class StopSignal:
@@ -72,6 +74,24 @@ def next_interval(rest: RestClient, config: SchedulerConfig) -> float:
     return min(config.poll_interval_s, config.voice_poll_interval_s) if enabled else config.poll_interval_s
 
 
+def classify_log_if_due(rest: RestClient, config: SchedulerConfig, last_attempt: float | None, now: float) -> float | None:
+    """Run the daily-log catch-up at most once per `log_classify_interval_s`; return the new last-attempt time.
+
+    A failure (Ollama stopped, backend busy) is logged and retried at the next interval, never raised: the capture
+    loop must keep running whatever happens to the log.
+    """
+    classify = getattr(rest, "classify_pending_log_days", None)
+    if classify is None or (last_attempt is not None and now - last_attempt < config.log_classify_interval_s):
+        return last_attempt
+    try:
+        result = classify()
+        if result and (result.get("classified_days") or result.get("failed_days")):
+            logger.info("daily log classify: %s", result)
+    except Exception:  # noqa: BLE001 - a log problem must never stop capture processing
+        logger.exception("daily log classify failed; will retry after %ss", config.log_classify_interval_s)
+    return now
+
+
 def run_forever(
     *,
     rest: RestClient,
@@ -80,6 +100,7 @@ def run_forever(
     should_stop: Callable[[], bool] = lambda: False,
     sleep: Callable[[float], None] = time.sleep,
     max_iterations: int | None = None,
+    clock: Callable[[], float] = time.monotonic,
 ) -> int:
     """Call `run_once` repeatedly, one capture per wake, until told to stop.
 
@@ -95,6 +116,7 @@ def run_forever(
     left it in.
     """
     iterations = 0
+    last_log_classify: float | None = None
     while not should_stop():
         if max_iterations is not None and iterations >= max_iterations:
             break
@@ -105,6 +127,8 @@ def run_forever(
             result = None
         iterations += 1
         logger.info("iteration %d: %s", iterations, result or {"status": "idle"})
+        if not result:  # only when no capture was just handled, so the model is free
+            last_log_classify = classify_log_if_due(rest, config, last_log_classify, clock())
         if should_stop():
             break
         if max_iterations is not None and iterations >= max_iterations:
