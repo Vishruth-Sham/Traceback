@@ -277,3 +277,37 @@ export class ApiError extends Error {
     return this.status === 409;
   }
 }
+
+
+// Mirrors backend/log_schemas.py (daily log).
+export interface LogEntry {
+  id: string;
+  logged_at: string;
+  log_date: string;
+  text: string;
+  origin: "ui" | "mcp";
+  labels: string[];
+}
+
+export interface LogDay {
+  log_date: string;
+  summary: string | null;
+  entries: LogEntry[];
+}
+
+export interface LogDaysPage {
+  today: string;
+  days: LogDay[];
+  next_before: string | null;
+}
+
+export interface LogCategory {
+  id: string;
+  name: string;
+  description: string;
+}
+
+export interface ClassifyResult {
+  classified_days: string[];
+  failed_days: string[];
+}

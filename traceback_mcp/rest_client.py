@@ -144,6 +144,37 @@ class RestClient:
     def undo_action(self, action_id: str, body: dict, *, idempotency_key: str | None) -> dict:
         return self.request("POST", f"/api/v1/actions/{action_id}/undo", json_body=body, idempotency_key=idempotency_key)
 
+    # --- daily log ------------------------------------------------------------------------
+
+    def create_log_entry(self, body: dict) -> dict:
+        return self.request("POST", "/api/v1/log", json_body=body)
+
+    def get_log_day(self, day: str | None) -> dict:
+        if day is None:
+            day = self.request("GET", "/api/v1/log/days", query={"limit": 1})["today"]
+        return self.request("GET", f"/api/v1/log/days/{day}")
+
+    def get_log_range(self, **params: Any) -> dict:
+        return self.request("GET", "/api/v1/log/range", query=params)
+
+    def search_log(self, **params: Any) -> dict:
+        return self.request("GET", "/api/v1/log/search", query=params)
+
+    def classify_log(self, body: dict) -> dict:
+        return self.request("POST", "/api/v1/log/classify", json_body=body)
+
+    def list_log_categories(self) -> list[dict]:
+        return self.request("GET", "/api/v1/log/categories")
+
+    def create_log_category(self, body: dict) -> dict:
+        return self.request("POST", "/api/v1/log/categories", json_body=body)
+
+    def update_log_category(self, category_id: str, body: dict) -> dict:
+        return self.request("PATCH", f"/api/v1/log/categories/{category_id}", json_body=body)
+
+    def delete_log_category(self, category_id: str) -> None:
+        return self.request("DELETE", f"/api/v1/log/categories/{category_id}")
+
     # --- tasks ------------------------------------------------------------------------
 
     def list_tasks(self, **params: Any) -> dict:
