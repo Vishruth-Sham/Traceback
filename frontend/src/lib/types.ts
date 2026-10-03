@@ -242,8 +242,9 @@ export interface Source {
 
 export interface Asset {
   id: string;
-  filename: string | null;
-  mime_type: string | null;
+  original_filename: string;
+  declared_mime_type: string | null;
+  detected_mime_type: string;
   byte_size: number;
   sha256: string;
   uploaded_at: string;

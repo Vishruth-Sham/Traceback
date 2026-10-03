@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
-import { createItem, getItem, interpretCaptureManually } from "@/lib/traceback";
+import { createItem, getItem, interpretCaptureManually, linkNoteImage, uploadAsset } from "@/lib/traceback";
 import { useCategories } from "@/lib/useCategories";
-import { ApiError } from "@/lib/types";
+import { ApiError, Item } from "@/lib/types";
 import { useToast } from "@/components/Toast";
+import { imageMarkdown, insertAtSelection, validNoteImage } from "@/lib/noteImages";
 
 function AddNotePageInner() {
   const router = useRouter();
@@ -26,12 +27,22 @@ function AddNotePageInner() {
   const [categoryId, setCategoryId] = useState(initialCategoryId);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState(params.get("prefill") ?? "");
+  const [images, setImages] = useState<{ id: string; file: File }[]>([]);
+  const editor = useRef<HTMLTextAreaElement>(null);
   const [busy, setBusy] = useState(false);
   const dirty = title.trim().length > 0 || body.trim().length > 0;
 
   async function save() {
     setBusy(true);
+    let created: Item | null = null;
     try {
+      let finalBody = body;
+      const uploadedImages: { id: string; assetId: string }[] = [];
+      for (const image of images.filter(({ id }) => body.includes(`traceback-pending:${id}`))) {
+        const uploaded = await uploadAsset(image.file);
+        uploadedImages.push({ id: image.id, assetId: uploaded.id });
+        finalBody = finalBody.replace(`traceback-pending:${image.id}`, `/api/v1/assets/${uploaded.id}/content`);
+      }
       const folder = folderId ? await getItem(folderId) : null;
       const destination = folder
         ? { folder_id: folder.id, folder_expected_version: folder.version }
@@ -39,7 +50,7 @@ function AddNotePageInner() {
           ? { project_id: projectId, project_expected_version: Number(projectVersion) }
           : { category_id: categoryId || null };
       if (captureId && captureVersion && captureGeneration) {
-        await interpretCaptureManually(captureId, {
+        const result = await interpretCaptureManually(captureId, {
           expected_version: Number(captureVersion),
           expected_generation: Number(captureGeneration),
           items: [
@@ -48,7 +59,7 @@ function AddNotePageInner() {
               item: {
                 item_type: "note",
                 title: title.trim() || "Untitled note",
-                content_md: body,
+                content_md: finalBody,
                 category_id: "category_id" in destination ? destination.category_id : null,
               },
               ...(folder
@@ -59,19 +70,29 @@ function AddNotePageInner() {
             },
           ],
         });
+        created = result.items[0] ?? null;
       } else {
-        await createItem({
+        created = await createItem({
           item_type: "note",
           title: title.trim() || "Untitled note",
-          content_md: body,
+          content_md: finalBody,
           ...destination,
         });
       }
 
+      if (created) {
+        let version = created.version;
+        for (const image of uploadedImages) {
+          const linked = await linkNoteImage(created.id, image.assetId, version);
+          version = linked.version;
+        }
+      }
+
       toast.push("Note saved.", "success");
-      router.push(returnTo);
+      router.push(images.length && created ? `/notes/${created.id}` : returnTo);
     } catch (err) {
-      toast.push(err instanceof ApiError ? err.message : "Could not save the note.", "error");
+      toast.push(err instanceof ApiError ? err.message : "Could not save the note or its images.", "error");
+      if (created) router.push(`/notes/${created.id}`);
     } finally {
       setBusy(false);
     }
@@ -79,6 +100,23 @@ function AddNotePageInner() {
 
   function discard() {
     router.push(returnTo);
+  }
+
+  function addImages(files: FileList | null) {
+    const selected = Array.from(files ?? []);
+    if (!selected.length) return;
+    if (selected.some((file) => !validNoteImage(file))) {
+      toast.push("Choose PNG, JPEG, GIF, WebP, or AVIF images up to 20 MB each.", "error");
+      return;
+    }
+    const pending = selected.map((file) => ({ id: crypto.randomUUID(), file }));
+    const markup = pending.map(({ id, file }) => imageMarkdown(id, file.name).replace(`/api/v1/assets/${id}/content`, `traceback-pending:${id}`)).join("\n\n");
+    const start = editor.current?.selectionStart ?? body.length;
+    const end = editor.current?.selectionEnd ?? start;
+    const inserted = insertAtSelection(body, markup, start, end);
+    setBody(inserted.content);
+    setImages((current) => [...current, ...pending]);
+    requestAnimationFrame(() => editor.current?.setSelectionRange(inserted.cursor, inserted.cursor));
   }
 
   return (
@@ -112,13 +150,31 @@ function AddNotePageInner() {
           className="mb-3 w-full border-b border-hairline bg-transparent pb-2 font-serif text-[22px] font-semibold text-ink placeholder:text-ink-faint focus:outline-none"
         />
         <textarea
+          ref={editor}
           autoFocus
           value={body}
           onChange={(e) => setBody(e.target.value)}
           rows={16}
-          placeholder="Start writing. Markdown, no other formatting."
+          placeholder="Start writing in Markdown. Use ```mermaid for diagrams."
           className="w-full resize-none border-none bg-transparent text-[13.5px] text-ink placeholder:text-ink-faint focus:outline-none"
         />
+      </div>
+
+      <div className="mt-4 flex items-center gap-3">
+        <label className="cursor-pointer rounded border border-hairline px-3 py-1.5 text-[12px] text-ink-muted hover:text-ink">
+          Insert image
+          <input
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp,image/avif"
+            multiple
+            className="sr-only"
+            onChange={(event) => {
+              addImages(event.target.files);
+              event.target.value = "";
+            }}
+          />
+        </label>
+        {images.length > 0 && <span className="text-[12px] text-ink-muted">{images.length} image{images.length === 1 ? "" : "s"} inserted in draft</span>}
       </div>
 
       <div className="mt-4 flex justify-end gap-2">

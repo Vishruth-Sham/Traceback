@@ -64,3 +64,24 @@ button {
   overflow-x: auto;
   white-space: pre-wrap;
 }
+
+.note-markdown img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0.75rem 0;
+  border-radius: 0.25rem;
+}
+
+.note-mermaid {
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 1rem 0;
+}
+
+.note-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}

@@ -123,8 +123,17 @@ def content(asset_id: uuid.UUID, session: SessionDep):
     path = asset_path(asset)
     if not path.is_file():
         raise DomainError("asset_unavailable", "Original asset bytes are missing", 503)
-    return FileResponse(path, media_type="application/octet-stream", filename=Path(asset.original_filename).name,
-                        headers={"X-Content-Type-Options": "nosniff"})
+    # Only formats that browsers decode as images may be displayed inline.
+    # In particular, SVG and HTML must remain downloads on this authenticated origin.
+    inline_images = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/avif"}
+    is_image = asset.detected_mime_type in inline_images
+    return FileResponse(
+        path,
+        media_type=asset.detected_mime_type if is_image else "application/octet-stream",
+        filename=Path(asset.original_filename).name,
+        content_disposition_type="inline" if is_image else "attachment",
+        headers={"X-Content-Type-Options": "nosniff", "Cache-Control": "private, no-store"},
+    )
 
 
 @router.post("/assets/{asset_id}/archive")
