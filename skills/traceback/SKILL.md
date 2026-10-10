@@ -112,6 +112,23 @@ A capture's original text is immutable. Use `correct_capture` for supported
 versioned corrections. The MCP server does not upload or download raw asset
 bytes.
 
+## Use the daily log
+
+The daily log is separate from items: free-text lines grouped by logical
+day. Use it when the user asks to log what they did or review a day or
+period, not for notes or tasks.
+
+- `log_entry` adds one line exactly as written and applies immediately.
+  Pass `at` only when the user said when it happened; the response's
+  `log_date` shows which day it landed on.
+- `get_day_log` reads one day, `get_log_range` reads up to 93 days, and
+  `search_log` finds entries by text.
+- Labels and summaries come from the local model. `classify_log` rebuilds
+  them and fails if that model is not running; entries are never edited.
+- `list_log_categories`, `save_log_category`, and `delete_log_category`
+  manage the labels the model may apply. Changing them does not relabel
+  existing entries until `classify_log` runs again.
+
 ## Handle failures and report results
 
 - `backend_unavailable`: explain that the local Traceback API is not
