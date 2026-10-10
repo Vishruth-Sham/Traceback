@@ -15,6 +15,7 @@ only changes where the file is discovered, not the override order.
 """
 
 import ipaddress
+import os
 from functools import lru_cache
 from pathlib import Path
 from urllib.parse import urlparse
@@ -44,6 +45,13 @@ class McpSettings(BaseSettings):
     request_timeout_s: float = Field(default=30.0, gt=0)
     client_label: str = "mcp"
     max_list_limit: int = Field(default=100, ge=1, le=250)
+    # Directories (os.pathsep-separated) that `insert_note_image` may read from.
+    # Empty by default: the tool refuses until the user opts a directory in.
+    image_import_dirs: str = ""
+
+    @property
+    def image_import_paths(self) -> list[Path]:
+        return [Path(part).expanduser() for part in self.image_import_dirs.split(os.pathsep) if part.strip()]
 
     @field_validator("api_base_url")
     @classmethod

@@ -112,6 +112,8 @@ With the app running, start the stdio MCP adapter with:
 .venv/bin/python -m traceback_mcp
 ```
 
+To let Claude Code insert a local image into a note (`insert_note_image`), name the directories it may read from in the adapter's environment, for example `TRACEBACK_MCP_IMAGE_IMPORT_DIRS=~/Pictures/traceback`. Several directories are separated by `:` on macOS and Linux. Without this setting the tool refuses.
+
 To check local model dependencies before downloading anything:
 
 ```sh

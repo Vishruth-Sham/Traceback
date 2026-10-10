@@ -335,3 +335,25 @@ def test_explicit_inbox_is_still_allowed_and_project_defaults_to_projects(live_a
     project = items.create_item(item_type="project", title="Auto-filed project")
     assert project["placement_state"] == "classified"
     assert project["category_id"] == next(c["id"] for c in items.list_categories() if c["slug"] == "projects")
+
+
+def test_insert_note_image_over_real_http(tmp_path, monkeypatch):
+    from traceback_mcp import config
+
+    png = bytes.fromhex("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000a49444154789c6300010000050001") + b"\x00" * 8
+    (tmp_path / "diagram.png").write_bytes(png)
+    monkeypatch.setenv("TRACEBACK_MCP_IMAGE_IMPORT_DIRS", str(tmp_path))
+    config.get_settings.cache_clear()
+    try:
+        other = items.list_categories()[-1]["id"]
+        note = items.create_item(item_type="note", title="Arch", content_md="Intro line.\n\nLater.", category_id=other)
+        result = assets.insert_note_image(note["id"], str(tmp_path / "diagram.png"), note["version"], after_text="Intro")
+    finally:
+        config.get_settings.cache_clear()
+    fetched = items.get_item(note["id"])
+    marker = f"![diagram.png](/api/v1/assets/{result['asset_id']}/content)"
+    assert fetched["content_md"] == f"Intro line.\n\n{marker}\n\nLater."
+    assert fetched["version"] == result["version"]
+    meta = assets.get_asset(result["asset_id"])
+    assert meta["detected_mime_type"] == "image/png" and meta["byte_size"] == len(png)
+    assert meta["item_ids"] == [note["id"]]
