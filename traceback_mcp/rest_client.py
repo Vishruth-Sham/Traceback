@@ -67,6 +67,9 @@ class RestClient:
                 url += "?" + urlencode(filtered, doseq=True)
         data = json.dumps(json_body).encode("utf-8") if json_body is not None else None
         request = urllib.request.Request(url=url, data=data, headers=self._headers(idempotency_key), method=method)
+        return self._perform(request)
+
+    def _perform(self, request: urllib.request.Request) -> Any:
         try:
             with urllib.request.urlopen(request, timeout=self._timeout) as response:
                 raw = response.read()
@@ -256,6 +259,18 @@ class RestClient:
         return self.request(
             "DELETE", f"/api/v1/assets/{asset_id}", query={"expected_version": expected_version, "confirm": confirm}
         )
+
+    def upload_asset(self, stream: Any, *, size: int, filename: str, content_type: str) -> dict:
+        """Stream `size` bytes from an open binary file to `POST /assets` (never buffered in memory)."""
+        headers = {
+            "Authorization": f"Bearer {self._token}",
+            "Content-Type": content_type,
+            "Content-Length": str(size),
+            "X-Traceback-Client": self._client_label,
+        }
+        url = f"{self._base_url}/api/v1/assets?{urlencode({'filename': filename})}"
+        request = urllib.request.Request(url=url, data=stream, headers=headers, method="POST")
+        return self._perform(request)
 
     def link_item_asset(self, item_id: str, asset_id: str, body: dict) -> dict:
         return self.request("POST", f"/api/v1/items/{item_id}/assets/{asset_id}", json_body=body)

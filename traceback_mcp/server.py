@@ -25,6 +25,11 @@ READ = ToolAnnotations(readOnlyHint=True, destructiveHint=False, openWorldHint=F
 MUTATE = ToolAnnotations(readOnlyHint=False, destructiveHint=False, idempotentHint=False, openWorldHint=False)
 DESTROY = ToolAnnotations(readOnlyHint=False, destructiveHint=True, idempotentHint=False, openWorldHint=False)
 
+# Tools that read the local filesystem. They exist only on this stdio server and
+# must never be registered on a remote MCP endpoint, where a path would name the
+# server's files rather than the caller's.
+LOCAL_ONLY_TOOLS = frozenset({"insert_note_image"})
+
 # (function, title, annotations)
 _TOOLS = [
     # Categories, items, Inbox, search, history, undo
@@ -75,6 +80,7 @@ _TOOLS = [
     (sources.unlink_item_source, "Unlink item source", MUTATE),
     # Assets (metadata only)
     (assets.get_asset, "Get asset metadata", READ),
+    (assets.insert_note_image, "Insert note image from local file", MUTATE),
     (assets.link_item_asset, "Link item asset", MUTATE),
     (assets.unlink_item_asset, "Unlink item asset", MUTATE),
     (assets.archive_asset, "Archive asset", MUTATE),
@@ -83,7 +89,8 @@ _TOOLS = [
 ]
 
 
-def build_server() -> MCPServer:
+def build_server(*, local: bool = True) -> MCPServer:
+    """Build the catalog. `local=False` (a future remote endpoint) omits filesystem-reading tools."""
     mcp = MCPServer(
         name="traceback",
         title="Traceback",
@@ -100,5 +107,7 @@ def build_server() -> MCPServer:
         ),
     )
     for fn, title, annotations in _TOOLS:
+        if not local and fn.__name__ in LOCAL_ONLY_TOOLS:
+            continue
         mcp.add_tool(fn, name=fn.__name__, title=title, description=fn.__doc__, annotations=annotations)
     return mcp

@@ -90,6 +90,32 @@ If a version conflict occurs, fetch the current record and compare it with
 the requested change. Reapply only what still makes sense; do not blindly
 retry with a new version or overwrite a newer user edit.
 
+## Insert an image into a note
+
+When the user asks to put a local image file into a note, use
+`insert_note_image` with the note's ID, the file's absolute path, and the
+note's current `expected_version` from `get_item`. Do not use `curl`, read
+the token, or base64 the file.
+
+- The path is on the machine running the MCP server and must be inside a
+  directory the user configured with `TRACEBACK_MCP_IMAGE_IMPORT_DIRS`. If
+  the tool reports `image_import_not_configured` or
+  `invalid_image_path`, tell the user; you cannot change the allowlist.
+  Symlinks are rejected. PNG, JPEG, GIF, WebP, and AVIF up to 20 MB only.
+- Pass `after_text` (text that occurs exactly once in the note) to place the
+  image after that paragraph; without it the image goes at the end. On
+  `ambiguous_placement` or `placement_not_found`, use a longer or different
+  snippet from `get_item`'s content.
+- Give `alt_text` when the user describes the image; it defaults to the
+  filename.
+- The result contains IDs and the new version, never image bytes.
+- On `partial_failure`, read `details` (asset linked or archived?) and tell
+  the user exactly what was left behind. This tool is not retry-safe: after
+  an uncertain failure, `get_item` first and do not repeat the call if the
+  image is already in the note. On `version_conflict`, refetch and reconsider.
+- This tool exists only for the local stdio server; it is not available
+  through a remote Traceback connection or from a phone.
+
 ## Preserve raw input when requested
 
 Claude Code and Codex already receive the user's text. For an ordinary
@@ -109,8 +135,8 @@ the destination. Use the same manual interpretation tool to file an
 unresolved capture after the user chooses what to create.
 
 A capture's original text is immutable. Use `correct_capture` for supported
-versioned corrections. The MCP server does not upload or download raw asset
-bytes.
+versioned corrections. Apart from `insert_note_image`, the MCP server does not
+upload or download raw asset bytes.
 
 ## Use the daily log
 
