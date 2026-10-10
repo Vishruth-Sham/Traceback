@@ -49,7 +49,7 @@ def last_call(fake):
 
 
 def test_create_item_only_includes_supplied_optional_fields(fake_client):
-    items.create_item(item_type="note", title="Hello")
+    items.create_item(item_type="note", title="Hello", inbox=True)
     name, args, kwargs = last_call(fake_client)
     body = args[0]
     assert name == "create_item"
@@ -260,7 +260,7 @@ def test_undo_action_accepts_idempotency_key_and_stringifies_version_keys(fake_c
 
 
 def test_create_item_accepts_folder_type(fake_client):
-    items.create_item(item_type="folder", title="Distributed systems")
+    items.create_item(item_type="folder", title="Distributed systems", inbox=True)
     _, args, _ = last_call(fake_client)
     assert args[0]["item_type"] == "folder"
 

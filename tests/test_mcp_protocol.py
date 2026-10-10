@@ -49,7 +49,7 @@ async def _run_protocol_check(base_url: str, token: str) -> None:
             assert categories_result.is_error is not True
             assert len(categories_result.content) >= 1
 
-            created = await session.call_tool("create_item", {"item_type": "note", "title": "protocol test note"})
+            created = await session.call_tool("create_item", {"item_type": "note", "title": "protocol test note", "inbox": True})
             assert created.is_error is not True
 
             search_tool = next(t for t in tools if t.name == "search_items")

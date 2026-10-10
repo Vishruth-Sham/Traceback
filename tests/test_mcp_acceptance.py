@@ -98,7 +98,7 @@ def test_version_conflict_surfaces_as_structured_tool_error(live_api):
     from mcp.server.mcpserver.exceptions import ToolError
     import json
 
-    created = items.create_item(item_type="note", title="Conflict target")
+    created = items.create_item(item_type="note", title="Conflict target", inbox=True)
     with pytest.raises(ToolError) as exc:
         items.update_item(item_id=created["id"], expected_version=created["version"] + 5, patch={"title": "stale write"})
     payload = json.loads(str(exc.value))
@@ -122,7 +122,7 @@ def test_move_link_and_relation_lifecycle(live_api):
     moved = items.move_item(item_id=task["id"], expected_version=task["version"], project_id=project["id"], project_expected_version=project["version"])
     assert any(r["relation"] == "part_of" and r["to_item_id"] == project["id"] for r in moved["relations"])
 
-    note = items.create_item(item_type="note", title="Related note")
+    note = items.create_item(item_type="note", title="Related note", inbox=True)
     linked = relations.link_items(
         from_item_id=note["id"], from_expected_version=note["version"], relation="related_to", to_item_id=project["id"], to_expected_version=moved["version"]
     )
@@ -165,7 +165,7 @@ def test_capture_archive_requires_unlinking_before_permanent_delete(live_api):
 
 
 def test_permanent_item_delete_requires_archive_first(live_api):
-    note = items.create_item(item_type="note", title="Delete me")
+    note = items.create_item(item_type="note", title="Delete me", inbox=True)
     import json
 
     from mcp.server.mcpserver.exceptions import ToolError
@@ -181,9 +181,9 @@ def test_permanent_item_delete_requires_archive_first(live_api):
 
 
 def test_folder_creation_nesting_and_move_over_real_http(live_api):
-    parent = items.create_item(item_type="folder", title="Learning root")
-    child_folder = items.create_item(item_type="folder", title="Distributed systems")
-    note = items.create_item(item_type="note", title="Raft summary")
+    parent = items.create_item(item_type="folder", title="Learning root", inbox=True)
+    child_folder = items.create_item(item_type="folder", title="Distributed systems", inbox=True)
+    note = items.create_item(item_type="note", title="Raft summary", inbox=True)
 
     linked = relations.link_items(
         from_item_id=child_folder["id"], from_expected_version=child_folder["version"], relation="part_of", to_item_id=parent["id"], to_expected_version=parent["version"]
@@ -232,7 +232,7 @@ def test_asset_link_archive_restore_and_permanent_delete_lifecycle(live_api):
     fetched = assets.get_asset(asset_id=asset_id)
     assert fetched["id"] == asset_id
 
-    note = items.create_item(item_type="note", title="Note with an asset")
+    note = items.create_item(item_type="note", title="Note with an asset", inbox=True)
     linked = assets.link_item_asset(item_id=note["id"], asset_id=asset_id, expected_version=note["version"])
     assert linked["version"] == note["version"] + 1
 
@@ -268,7 +268,7 @@ def test_asset_link_archive_restore_and_permanent_delete_lifecycle(live_api):
 
 
 def test_item_source_link_and_unlink_lifecycle(live_api):
-    note = items.create_item(item_type="note", title="Sourced note")
+    note = items.create_item(item_type="note", title="Sourced note", inbox=True)
     capture = captures.create_capture(source_type="typed", raw_text="Original capture text")
 
     assert sources.get_item_sources(item_id=note["id"]) == []
@@ -307,3 +307,31 @@ def test_backend_unavailable_error_is_distinct_from_domain_errors():
         assert payload["code"] == "backend_unavailable"
     finally:
         set_client(None)
+
+
+def test_note_without_destination_is_rejected_instead_of_landing_in_inbox(live_api):
+    import json
+
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    with pytest.raises(ToolError) as exc:
+        items.create_item(item_type="note", title="Unfiled idea")
+    payload = json.loads(str(exc.value))
+    assert payload["code"] == "destination_required"
+    assert {c["slug"] for c in payload["details"]["categories"]} >= {"learning", "other"}
+
+
+def test_note_created_with_category_is_filed_not_inbox(live_api):
+    categories = {c["slug"]: c["id"] for c in items.list_categories()}
+    note = items.create_item(item_type="note", title="Filed idea", category_id=categories["learning"])
+    assert note["placement_state"] == "classified"
+    assert note["category_id"] == categories["learning"]
+    assert all(entry["id"] != note["id"] for entry in items.list_inbox(limit=100)["items"])
+
+
+def test_explicit_inbox_is_still_allowed_and_project_defaults_to_projects(live_api):
+    inbox_note = items.create_item(item_type="note", title="Needs a decision", inbox=True)
+    assert inbox_note["placement_state"] == "inbox"
+    project = items.create_item(item_type="project", title="Auto-filed project")
+    assert project["placement_state"] == "classified"
+    assert project["category_id"] == next(c["id"] for c in items.list_categories() if c["slug"] == "projects")
