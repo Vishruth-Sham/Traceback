@@ -74,3 +74,19 @@ def require_confirmation(confirm: bool, *, action: str) -> None:
                 }
             )
         )
+
+
+def destination_required(item_type: str, categories: list[dict]) -> ToolError:
+    return ToolError(
+        json.dumps(
+            {
+                "code": "destination_required",
+                "message": (
+                    f"Choose where this {item_type} belongs before creating it: pass category_id (one of the "
+                    "categories below; Other when none fits), or an existing project_id/folder_id with its "
+                    "expected version. Pass inbox=true only if the placement genuinely needs the user's decision."
+                ),
+                "details": {"categories": [{"id": c["id"], "name": c["name"], "slug": c["slug"]} for c in categories]},
+            }
+        )
+    )

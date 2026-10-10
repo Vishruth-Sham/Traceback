@@ -17,7 +17,8 @@ inside a REST request.
 import uuid
 from typing import Any, Literal
 
-from traceback_mcp.errors import guarded
+from traceback_mcp.errors import destination_required, guarded
+from traceback_mcp.rest_client import RestError
 from traceback_mcp.runtime import get_client
 from traceback_mcp.tools.common import bounded_limit
 
@@ -115,13 +116,19 @@ def create_item(
     project_expected_version: int | None = None,
     folder_id: uuid.UUID | None = None,
     folder_expected_version: int | None = None,
+    inbox: bool = False,
     idempotency_key: str | None = None,
 ) -> dict:
-    """Create a note, task, project, or folder. Omitted category means Inbox.
+    """Create a note, task, project, or folder, filed where it belongs.
 
-    To create directly inside a project or folder atomically, pass its ID and
-    current expected version. Choose at most one container; category is then
-    derived from it.
+    Choose the destination yourself before calling: a category from
+    `list_categories` (`category_id`), or an existing project/folder (its ID
+    and current expected version; category is then derived from it). Use at
+    most one. A note or folder with no destination is rejected with
+    `destination_required` (its details list the category IDs) unless
+    `inbox=true`, which is only for when placement genuinely needs the user's
+    decision. A project with no destination is filed under Projects. A task
+    may omit a destination; it lives in Tasks regardless.
 
     `due_date`/`due_time`/`due_timezone` are only valid for tasks: `due_date`
     is `YYYY-MM-DD`, `due_time` an optional local `HH:MM:SS` (requires
@@ -129,6 +136,17 @@ def create_item(
     means date-only, not midnight. Returns the canonical item with its
     starting version.
     """
+    has_destination = category_id is not None or project_id is not None or folder_id is not None
+    if inbox and has_destination:
+        raise RestError(422, "invalid_input", "inbox=true cannot be combined with category_id, project_id, or folder_id", {})
+    if not has_destination and not inbox and item_type != "task":
+        # Nothing classifies an item after creation, so an unfiled note would
+        # sit in Inbox indefinitely. Make the caller pick the destination.
+        categories = get_client().list_categories()
+        if item_type == "project":
+            category_id = next(uuid.UUID(c["id"]) for c in categories if c["slug"] == "projects")
+        else:
+            raise destination_required(item_type, categories)
     body: dict[str, Any] = {"item_type": item_type, "title": title, "content_md": content_md}
     if category_id is not None:
         body["category_id"] = str(category_id)
