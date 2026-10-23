@@ -19,7 +19,7 @@
   </p>
 
   <a href="https://cdn.jsdelivr.net/gh/Vishruth-Sham/Traceback@main/assets/traceback-demo.mp4"><img src="assets/traceback-demo.jpg" width="720" alt="Watch the Traceback demo video" /></a>
-  <p><sub><a href="https://cdn.jsdelivr.net/gh/Vishruth-Sham/Traceback@main/assets/traceback-demo.mp4">▶ Watch the 28-second demo</a></sub></p>
+  <p><sub><a href="https://cdn.jsdelivr.net/gh/Vishruth-Sham/Traceback@main/assets/traceback-demo.mp4">▶ Watch the demo</a></sub></p>
 </div>
 
 ---
