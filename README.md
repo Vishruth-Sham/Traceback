@@ -18,8 +18,8 @@
     <img src="https://img.shields.io/badge/data-local-3f5a3c?style=flat-square" alt="Local data" />
   </p>
 
-  <a href="assets/traceback-demo.mp4"><img src="assets/traceback-demo.jpg" width="720" alt="Watch the Traceback demo video" /></a>
-  <p><sub><a href="assets/traceback-demo.mp4">▶ Watch the 28-second demo</a></sub></p>
+  <a href="https://cdn.jsdelivr.net/gh/Vishruth-Sham/Traceback@main/assets/traceback-demo.mp4"><img src="assets/traceback-demo.jpg" width="720" alt="Watch the Traceback demo video" /></a>
+  <p><sub><a href="https://cdn.jsdelivr.net/gh/Vishruth-Sham/Traceback@main/assets/traceback-demo.mp4">▶ Watch the 28-second demo</a></sub></p>
 </div>
 
 ---
