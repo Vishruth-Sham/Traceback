@@ -126,6 +126,16 @@ export async function moveItem(
 export async function createFolder(title: string, categoryId: string, parentId?: string): Promise<Item> {
   if (parentId) {
     const parent = await getItem(parentId);
+    // The project page renders the folder tree with the project as its root, so
+    // the parent may be a project; the backend rejects project ids sent as folder_id.
+    if (parent.item_type === "project") {
+      return createItem({
+        item_type: "folder",
+        title,
+        project_id: parent.id,
+        project_expected_version: parent.version,
+      });
+    }
     return createItem({
       item_type: "folder",
       title,
