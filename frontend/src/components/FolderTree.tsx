@@ -9,27 +9,36 @@ import { archiveItem, createFolder, listItems } from "@/lib/traceback";
 import { ApiError, Item } from "@/lib/types";
 import { useToast } from "./Toast";
 
-function childrenKey(categoryId: string, parentId: string | null): string {
-  return `folder-children:${categoryId}:${parentId ?? "root"}`;
+export interface SortSpec {
+  sort: "created_at" | "updated_at" | "title";
+  order: "asc" | "desc";
 }
 
-function fetchChildren(categoryId: string, parentId: string | null) {
+export const DEFAULT_SORT: SortSpec = { sort: "created_at", order: "asc" };
+
+function childrenKey(categoryId: string, parentId: string | null, { sort, order }: SortSpec): string {
+  return `folder-children:${categoryId}:${parentId ?? "root"}:${sort}:${order}`;
+}
+
+function fetchChildren(categoryId: string, parentId: string | null, spec: SortSpec) {
   return parentId
-    ? listItems({ parent_id: parentId, limit: 100 })
-    : listItems({ category_id: categoryId, top_level: true, limit: 100 });
+    ? listItems({ parent_id: parentId, ...spec, limit: 100 })
+    : listItems({ category_id: categoryId, top_level: true, ...spec, limit: 100 });
 }
 
 export function FolderTree({
   categoryId,
   parentId,
   depth = 0,
+  sortSpec = DEFAULT_SORT,
 }: {
   categoryId: string;
   parentId: string | null;
   depth?: number;
+  sortSpec?: SortSpec;
 }) {
-  const { data, error, isLoading, mutate } = useSWR(childrenKey(categoryId, parentId), () =>
-    fetchChildren(categoryId, parentId),
+  const { data, error, isLoading, mutate } = useSWR(childrenKey(categoryId, parentId, sortSpec), () =>
+    fetchChildren(categoryId, parentId, sortSpec),
   );
   const [addingFolder, setAddingFolder] = useState(false);
 
@@ -46,7 +55,7 @@ export function FolderTree({
       {error && <div className="py-2 text-[12px] text-danger">Could not load this folder.</div>}
 
       {folders.map((folder) => (
-        <FolderNode key={folder.id} folder={folder} categoryId={categoryId} depth={depth} onArchived={() => void mutate()} />
+        <FolderNode key={folder.id} folder={folder} categoryId={categoryId} depth={depth} sortSpec={sortSpec} onArchived={() => void mutate()} />
       ))}
 
       {files.map((item) => (
@@ -146,11 +155,13 @@ function FolderNode({
   folder,
   categoryId,
   depth,
+  sortSpec,
   onArchived,
 }: {
   folder: Item;
   categoryId: string;
   depth: number;
+  sortSpec: SortSpec;
   onArchived: () => void;
 }) {
   const pathname = usePathname();
@@ -186,6 +197,7 @@ function FolderNode({
           categoryId={categoryId}
           parentId={folder.id}
           depth={depth + 1}
+          sortSpec={sortSpec}
         />
       )}
     </div>
