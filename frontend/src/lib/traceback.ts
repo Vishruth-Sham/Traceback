@@ -49,6 +49,8 @@ export interface ListItemsParams {
   inbox?: boolean;
   archived?: boolean;
   q?: string;
+  sort?: "created_at" | "updated_at" | "title";
+  order?: "asc" | "desc";
   cursor?: string;
   limit?: number;
 }

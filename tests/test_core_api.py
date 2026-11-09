@@ -163,6 +163,21 @@ def test_auth_and_pagination(client):
         assert response.status_code == 422, response.text
 
 
+def test_list_items_sorting(client):
+    titles = ["banana", "Apple", "cherry"]
+    ids = {create(client, title=title)["id"] for title in titles}
+
+    def listed(**params):
+        items = client.get("/api/v1/items", params={"item_type": "note", "limit": 100, **params}).json()["items"]
+        return [i["title"] for i in items if i["id"] in ids]
+
+    assert listed(sort="created_at") == titles
+    assert listed(sort="created_at", order="desc") == titles[::-1]
+    assert listed(sort="title") == ["Apple", "banana", "cherry"]
+    assert listed(sort="title", order="desc") == ["cherry", "banana", "Apple"]
+    assert client.get("/api/v1/items", params={"sort": "bogus"}).status_code == 422
+
+
 def test_move_undo_restores_both_items_and_link(client):
     project = create(client, "project")
     task = create(client, "task")

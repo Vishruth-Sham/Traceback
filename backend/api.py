@@ -205,6 +205,8 @@ def list_items(
     inbox: bool | None = None,
     archived: bool = False,
     q: str | None = Query(default=None, max_length=500),
+    sort: Literal["created_at", "updated_at", "title"] | None = None,
+    order: Literal["asc", "desc"] = "asc",
     cursor: str | None = None,
     limit: int = Query(default=50, ge=1),
 ):
@@ -232,7 +234,12 @@ def list_items(
     if q:
         pattern = f"%{q}%"
         stmt = stmt.where(or_(Item.title.ilike(pattern), Item.content_md.ilike(pattern)))
-    rows = session.scalars(stmt.order_by(Item.updated_at.desc(), Item.id).offset(offset).limit(limit + 1)).unique().all()
+    if sort:
+        column = func.lower(Item.title) if sort == "title" else getattr(Item, sort)
+        ordering = (column.desc() if order == "desc" else column.asc(), Item.id)
+    else:
+        ordering = (Item.updated_at.desc(), Item.id)
+    rows = session.scalars(stmt.order_by(*ordering).offset(offset).limit(limit + 1)).unique().all()
     return paginated(rows, offset, limit, lambda row: item_out(session, row, include_content=False))
 
 
