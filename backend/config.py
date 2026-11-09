@@ -1,8 +1,10 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from backend.paths import require_no_legacy_data, resolve_data_dir
 
 
 class Settings(BaseSettings):
@@ -20,7 +22,10 @@ class Settings(BaseSettings):
     # The scheduled pass classifies today once the local hour reaches this; earlier days are classified as soon as they end.
     log_auto_classify_hour: int = Field(default=22, ge=0, le=23)
     max_page_size: int = Field(default=100, ge=1, le=250)
-    asset_dir: Path = Path(".local/traceback/assets")
+    # Personal data (database cluster, note assets, logs) lives outside the repo; see backend/paths.py.
+    data_dir: Path | None = None
+    # Defaults to <data_dir>/assets. Override only for tests or unusual layouts.
+    asset_dir: Path | None = None
     max_upload_bytes: int = Field(default=100 * 1024 * 1024, ge=1)
 
     # Voice commands (review-first). Env-only and read-only at runtime; restart the API to change.
@@ -45,6 +50,16 @@ class Settings(BaseSettings):
                 "voice_auto_apply_intents must be empty: this release is review-first and implements no auto-apply"
             )
         return ""
+
+    @model_validator(mode="after")
+    def resolve_storage_paths(self) -> "Settings":
+        self.data_dir = resolve_data_dir(self.data_dir)
+        if self.asset_dir is None:
+            require_no_legacy_data(self.data_dir)
+            self.asset_dir = self.data_dir / "assets"
+        else:
+            self.asset_dir = self.asset_dir.expanduser()
+        return self
 
     @property
     def voice_mime_types(self) -> list[str]:

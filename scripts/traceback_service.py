@@ -14,7 +14,13 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-STATE = ROOT / ".local" / "traceback"
+sys.path.insert(0, str(ROOT))
+from backend.paths import data_dir, require_no_legacy_data  # noqa: E402
+
+try:
+    STATE = data_dir()
+except ValueError as _error:
+    raise SystemExit(f"Traceback data folder: {_error}") from None
 VENV = ROOT / ".venv" / "bin"
 API_URL = "http://127.0.0.1:8000/api/v1/health/live"
 UI_URL = "http://localhost:3000/api/v1/health/ready"
@@ -116,7 +122,11 @@ def start() -> None:
         raise RuntimeError("Missing .env or frontend/.env.local. Follow docs/local-development.md first.")
     if not (VENV / "uvicorn").exists() or not (ROOT / "frontend/node_modules/.bin/next").exists():
         raise RuntimeError("Missing dependencies. Run uv sync --locked and npm install in frontend/ first.")
-    STATE.mkdir(parents=True, exist_ok=True)
+    try:
+        require_no_legacy_data(STATE)
+    except ValueError as exc:
+        raise RuntimeError(str(exc)) from exc
+    STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
 
     db_was_running = subprocess.run(
         [sys.executable, str(ROOT / "scripts/local_db.py"), "status"],

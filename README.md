@@ -50,6 +50,8 @@ Traceback runs on your Mac. The app, API, PostgreSQL database, and optional proc
 
    Database credentials and the API token are generated in the ignored root `.env` file. Existing local data is preserved.
 
+   Your notes, images, database and logs live **outside this repo**, in `~/Library/Application Support/Traceback` by default (run `python3 scripts/local_db.py where` to print it). Set `TRACEBACK_DATA_DIR` in `.env` to an absolute path to keep them elsewhere; paths inside the checkout are refused. If you used an older version that stored data in `.local/traceback`, quit Traceback and run `python3 scripts/local_db.py move-data` once.
+
 2. Create the ignored `frontend/.env.local` file with the API token from `.env`:
 
    ```dotenv

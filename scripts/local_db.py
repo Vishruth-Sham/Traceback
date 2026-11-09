@@ -11,10 +11,17 @@ import re
 import secrets
 import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE = ROOT / ".local" / "traceback"
+sys.path.insert(0, str(ROOT))
+from backend.paths import ENV_VAR, LEGACY_DATA_DIR, data_dir, legacy_data_present, require_no_legacy_data  # noqa: E402
+
+try:
+    STATE = data_dir()
+except ValueError as _error:
+    raise SystemExit(f"Traceback data folder: {_error}") from None
 DATA = STATE / "postgres"
 ASSETS = STATE / "assets"
 BIN = Path(os.environ.get("TRACEBACK_PG_BIN", "/opt/homebrew/opt/postgresql@17/bin"))
@@ -50,17 +57,22 @@ def create(name: str) -> None:
     run("createdb", db_name(name))
 
 
+def running() -> bool:
+    return subprocess.run([str(BIN / "pg_ctl"), "-D", str(DATA), "status"],
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0
+
+
 def start() -> None:
+    require_no_legacy_data(STATE)
     if not (DATA / "PG_VERSION").exists():
         raise ValueError("Cluster is not initialized; run init first.")
-    status = subprocess.run([str(BIN / "pg_ctl"), "-D", str(DATA), "status"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    if status.returncode != 0:
+    if not running():
         run("pg_ctl", "-D", str(DATA), "-l", str(STATE / "postgres.log"), "-w", "start")
     sql("SELECT 1")
 
 
 def init() -> None:
+    require_no_legacy_data(STATE)
     STATE.mkdir(parents=True, exist_ok=True, mode=0o700)
     STATE.chmod(0o700)
     ASSETS.mkdir(exist_ok=True, mode=0o700)
@@ -109,7 +121,7 @@ def checksums(directory: Path) -> dict[str, str]:
 def backup(target: Path) -> None:
     target = target.resolve()
     if target == STATE or STATE in target.parents:
-        raise ValueError("Backup destination must be outside .local/traceback.")
+        raise ValueError(f"Backup destination must be outside {STATE}.")
     # Caller stops API writes; pg_dump itself takes a consistent database snapshot.
     target.mkdir(mode=0o700, parents=True, exist_ok=False)
     run("pg_dump", "-d", "traceback", "--format=custom", "--no-owner", "--no-acl", "-f", str(target / "database.dump"))
@@ -139,10 +151,45 @@ def restore(source: Path, database: str, assets: Path) -> None:
     print(f"Restore verified: table row counts and asset SHA-256 checksums match ({database}).")
 
 
+def pid_alive(pidfile: Path) -> bool:
+    try:
+        text = pidfile.read_text().strip()
+        pid = int(json.loads(text)["pid"]) if text.startswith("{") else int(text)
+        os.kill(pid, 0)
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return True
+
+
+def move_data() -> None:
+    """Move an existing in-repo data folder (.local/traceback) to the configured data folder."""
+    source = LEGACY_DATA_DIR
+    if not legacy_data_present():
+        raise ValueError(f"Nothing to move: no Traceback data in {source}.")
+    if STATE.exists():
+        raise ValueError(f"{STATE} already exists; refusing to merge. Move or rename it first.")
+    if subprocess.run([str(BIN / "pg_ctl"), "-D", str(source / "postgres"), "status"],
+                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
+        raise ValueError("PostgreSQL is still running from the old folder. Quit Traceback (or run stop) first.")
+    for name in ("api", "ui", "processor"):
+        if pid_alive(source / f"{name}.pid"):
+            raise ValueError(f"The Traceback {name} service is still running; quit Traceback first.")
+    STATE.parent.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(source), str(STATE))
+    STATE.chmod(0o700)
+    conf = STATE / "postgres" / "postgresql.conf"
+    if conf.exists():
+        socket_path = str(STATE).replace("'", "''")
+        with conf.open("a") as config:
+            # The last setting wins, so this replaces the old in-repo socket directory.
+            config.write(f"\nunix_socket_directories = '{socket_path}'  # moved by local_db.py move-data\n")
+    print(f"Moved Traceback data to {STATE}. Set {ENV_VAR} in .env to pin this location if you like.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("init", "start", "stop", "status", "create-test-db"):
+    for command in ("init", "start", "stop", "status", "create-test-db", "move-data", "where"):
         commands.add_parser(command)
     backup_parser = commands.add_parser("backup")
     backup_parser.add_argument("destination", type=Path)
@@ -164,6 +211,10 @@ def main() -> None:
             if not exists("traceback_test"):
                 create("traceback_test")
             print("traceback_test is ready; no existing data was removed.")
+        elif args.command == "move-data":
+            move_data()
+        elif args.command == "where":
+            print(STATE)
         elif args.command == "backup":
             backup(args.destination)
         else:
