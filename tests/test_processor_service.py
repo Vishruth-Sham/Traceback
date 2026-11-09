@@ -3,7 +3,7 @@
 Runs the actual start/status/stop commands against a real background
 `python -m processor.scheduler` process, isolated from any real usage via
 `TRACEBACK_PROCESSOR_STATE_DIR` (a tmp_path, so this never touches
-.local/traceback/processor.pid) and pointed at a closed local port
+the real data folder's processor.pid) and pointed at a closed local port
 (127.0.0.1:1, refuses connections immediately) so each scheduler wake fails
 fast and predictably without needing a live backend. This proves the actual
 process is spawned, signaled, and reaped cleanly — not just that the

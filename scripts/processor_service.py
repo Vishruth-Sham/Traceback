@@ -4,8 +4,8 @@
 Manages one background `python -m processor.scheduler` process with a PID
 file, the same self-contained pattern `scripts/local_db.py` uses for the
 local PostgreSQL cluster — no launchd/systemd/cron registration, so nothing
-here touches any file outside this checkout or the user's global machine
-configuration. Starting is idempotent (a second `start` while already
+here touches the user's global machine configuration. The PID and log files
+live in the Traceback data folder (TRACEBACK_DATA_DIR, see backend/paths.py). Starting is idempotent (a second `start` while already
 running is a no-op); `stop` sends SIGTERM and waits for a clean exit.
 """
 from __future__ import annotations
@@ -19,7 +19,13 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-STATE = Path(os.environ.get("TRACEBACK_PROCESSOR_STATE_DIR", str(ROOT / ".local" / "traceback")))
+sys.path.insert(0, str(ROOT))
+from backend.paths import data_dir  # noqa: E402
+
+try:
+    STATE = Path(os.environ["TRACEBACK_PROCESSOR_STATE_DIR"]) if os.environ.get("TRACEBACK_PROCESSOR_STATE_DIR") else data_dir()
+except ValueError as _error:
+    raise SystemExit(f"Traceback data folder: {_error}") from None
 PIDFILE = STATE / "processor.pid"
 LOGFILE = STATE / "processor.log"
 
