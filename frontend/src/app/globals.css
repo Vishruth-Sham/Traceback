@@ -65,6 +65,46 @@ button {
   white-space: pre-wrap;
 }
 
+/* Tables: `overflow-wrap: anywhere` above shrinks min-content widths to one
+   character, so short columns collapsed ("Ye/ar"). Restore normal word
+   wrapping inside cells and let wide tables scroll horizontally. */
+.note-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 0.75rem 0 1rem;
+  font-size: 0.95em;
+}
+
+.note-markdown th,
+.note-markdown td {
+  overflow-wrap: normal;
+  word-break: normal;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--hairline);
+  text-align: left;
+  vertical-align: top;
+}
+
+.note-markdown th {
+  background: var(--paper-soft);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.note-markdown td:first-child {
+  white-space: nowrap;
+}
+
+.note-markdown td {
+  min-width: 4rem;
+}
+
+.note-markdown tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--paper-soft) 50%, transparent);
+}
+
 .note-markdown img {
   display: block;
   max-width: 100%;
