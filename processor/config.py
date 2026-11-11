@@ -54,7 +54,7 @@ class ProcessorSettings(BaseSettings):
     # Which model reads captures. "ollama" keeps everything on this machine; "anthropic"
     # sends capture text to the Claude API (for a server with no local model).
     llm_provider: Literal["ollama", "anthropic"] = "ollama"
-    anthropic_model: str = "claude-opus-5-5"
+    anthropic_model: str = "claude-haiku-5-5"
     anthropic_effort: Literal["low", "medium", "high"] = "low"
     anthropic_timeout_s: float = Field(default=120.0, gt=0)
     anthropic_max_output_tokens: int = Field(default=4000, ge=256, le=32000)

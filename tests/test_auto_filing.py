@@ -181,8 +181,12 @@ def test_anthropic_provider_sends_system_prompt_and_reads_text(monkeypatch):
     assert reply == '{"ok": 1}'
     [call] = calls
     assert call["system"] == "rules" and call["messages"] == [{"role": "user", "content": "hi"}]
-    assert call["model"] == "claude-opus-5-5" and call["output_config"] == {"effort": "low"}
-    assert call["fallbacks"] == "default"
+    assert call["model"] == "claude-haiku-5-5" and call["output_config"] == {"effort": "low"}
+    assert "fallbacks" not in call  # Haiku has no server-side refusal fallback
+
+    calls.clear()
+    _call_ollama([{"role": "user", "content": "hi"}], _settings(llm_provider="anthropic", anthropic_model="claude-opus-5-5"))
+    assert calls[0]["fallbacks"] == "default" and "system" not in calls[0]
 
 
 # --- backend: apply and undo --------------------------------------------------------
