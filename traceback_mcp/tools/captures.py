@@ -38,7 +38,14 @@ def create_capture(
     placement_hint: str | None = None,
     idempotency_key: str | None = None,
 ) -> dict:
-    """Persist an original capture before any interpretation.
+    """Save something the user said or wrote and let Traceback file it.
+
+    This is the default way to add things to Traceback: pass the user's words
+    as a `typed` capture with `raw_text` and the default "general" profile.
+    The processor splits it into pieces, works out what each one is (note,
+    task, new project, update to an existing project, or daily-log entry),
+    files each in the best place and records it as one plan that
+    `undo_capture_filing` reverses. Use `get_capture` to see the result.
 
     Typed captures require non-blank `raw_text`; audio/file captures
     require at least one already-uploaded asset ID in `asset_ids` (upload
@@ -176,6 +183,20 @@ def retry_capture(capture_id: uuid.UUID, expected_version: int, expected_generat
     """Requeue a failed capture for another processing attempt. Does not guarantee a processor is running."""
     body = {"expected_version": expected_version, "expected_generation": expected_generation}
     return get_client().retry_capture(str(capture_id), body, idempotency_key=idempotency_key)
+
+
+@guarded
+def undo_capture_filing(capture_id: uuid.UUID, expected_version: int, idempotency_key: str | None = None) -> dict:
+    """Undo the whole automatic filing of a capture in one step.
+
+    Items the filing created are archived, items it appended to go back to how
+    they were, and its daily-log entries are archived. The capture becomes
+    `failed` with error code `filing_undone`, ready to be filed by hand
+    (`apply_capture_interpretation`) or retried. Refused with
+    `version_conflict` if a touched item was edited after the filing.
+    """
+    body = {"expected_version": expected_version}
+    return get_client().undo_capture_filing(str(capture_id), body, idempotency_key=idempotency_key)
 
 
 @guarded

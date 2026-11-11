@@ -8,6 +8,7 @@ import { ApiError, Item } from "@/lib/types";
 import { ItemRow } from "@/components/ItemRow";
 import { MoveToSelect } from "@/components/MoveToSelect";
 import { CaptureCard } from "@/components/CaptureCard";
+import { CaptureBox } from "@/components/CaptureBox";
 import { EmptyState, ErrorState, LoadingState } from "@/components/StateViews";
 import { ItemDetailPanel } from "@/components/ItemDetailPanel";
 import { useDetailPanel } from "@/lib/useDetailPanel";
@@ -58,6 +59,7 @@ function InboxPageInner() {
         title="Inbox"
         description="Confirm a suggestion, pick another folder, or start a note."
       />
+      <CaptureBox onChanged={() => mutate()} />
       {isLoading && <LoadingState label="Loading Inbox…" />}
       {error && <ErrorState message="Could not load Inbox." onRetry={() => mutate()} />}
       {isEmpty && <EmptyState title="Nothing awaiting attention." />}

@@ -279,6 +279,11 @@ export async function deleteCapturePermanently(id: string, expected_version: num
   return api.del<void>(`/captures/${id}?expected_version=${expected_version}&confirm=true`);
 }
 
+/** Reverse the whole automatic filing of a capture; it returns to "failed" with code filing_undone. */
+export async function undoCaptureFiling(id: string, expected_version: number): Promise<{ capture: Capture; item_ids: string[] }> {
+  return api.post<{ capture: Capture; item_ids: string[] }>(`/captures/${id}/undo-filing`, { expected_version });
+}
+
 export async function retryCapture(id: string, expected_version: number, expected_generation: number): Promise<Capture> {
   return api.post<Capture>(`/captures/${id}/retry`, { expected_version, expected_generation });
 }

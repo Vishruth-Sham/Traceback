@@ -69,3 +69,14 @@ def drain_claimable_captures(client) -> None:
             cursor = page.get("next_cursor")
             if not cursor:
                 break
+
+
+@pytest.fixture(autouse=True)
+def _legacy_item_proposals_by_default(monkeypatch):
+    """Older processor tests exercise the one-shot item proposal; auto-filing tests opt back in."""
+    from processor.config import get_settings
+
+    monkeypatch.setenv("TRACEBACK_PROCESSOR_AUTO_FILE", "false")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()

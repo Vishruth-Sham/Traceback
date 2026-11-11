@@ -9,6 +9,7 @@ so the coordinator's integration can tune them without editing this file.
 import shutil
 from functools import lru_cache
 import ipaddress
+from typing import Literal
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -49,6 +50,19 @@ class ProcessorSettings(BaseSettings):
     voice_min_audio_seconds: float = Field(default=0.7, ge=0)
 
     max_proposal_items: int = Field(default=10, ge=1, le=10)
+
+    # Which model reads captures. "ollama" keeps everything on this machine; "anthropic"
+    # sends capture text to the Claude API (for a server with no local model).
+    llm_provider: Literal["ollama", "anthropic"] = "ollama"
+    anthropic_model: str = "claude-haiku-5-5"
+    anthropic_effort: Literal["low", "medium", "high"] = "low"
+    anthropic_timeout_s: float = Field(default=120.0, gt=0)
+    anthropic_max_output_tokens: int = Field(default=4000, ge=256, le=32000)
+
+    # Auto-filing: typed captures are split into pieces, each given an intent
+    # (note, task, project, project update, log) and applied straight away as one
+    # undoable plan. False keeps the older one-shot item proposal.
+    auto_file: bool = True
 
     @field_validator("ollama_base_url")
     @classmethod

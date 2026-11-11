@@ -119,7 +119,11 @@ def create_item(
     inbox: bool = False,
     idempotency_key: str | None = None,
 ) -> dict:
-    """Create a note, task, project, or folder, filed where it belongs.
+    """Create a note, task, project, or folder in a place you already know.
+
+    For an ordinary "add this to Traceback", prefer `create_capture` with the
+    user's words: Traceback then decides what it is and where it goes. Use
+    this tool when the user names the exact type and place.
 
     Choose the destination yourself before calling: a category from
     `list_categories` (`category_id`), or an existing project/folder (its ID

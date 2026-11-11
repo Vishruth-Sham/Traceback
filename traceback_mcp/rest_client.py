@@ -228,6 +228,9 @@ class RestClient:
     def retry_capture(self, capture_id: str, body: dict, *, idempotency_key: str | None) -> dict:
         return self.request("POST", f"/api/v1/captures/{capture_id}/retry", json_body=body, idempotency_key=idempotency_key)
 
+    def undo_capture_filing(self, capture_id: str, body: dict, *, idempotency_key: str | None) -> dict:
+        return self.request("POST", f"/api/v1/captures/{capture_id}/undo-filing", json_body=body, idempotency_key=idempotency_key)
+
     def apply_capture_interpretation(self, capture_id: str, body: dict, *, idempotency_key: str | None) -> dict:
         return self.request(
             "POST", f"/api/v1/captures/{capture_id}/interpretations", json_body=body, idempotency_key=idempotency_key
