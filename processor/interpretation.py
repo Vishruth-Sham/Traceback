@@ -106,7 +106,59 @@ def _valid_category_ids(context: dict[str, Any]) -> set[str]:
     return _valid_ids(context.get("categories"))
 
 
+# Models that accept the server-side refusal fallback (`fallbacks: "default"`).
+_FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-fable-5-1"}
+
+
+def _call_anthropic(messages: list[dict[str, str]], settings: ProcessorSettings) -> str:
+    """Send the same chat to the Claude API and return the reply text.
+
+    The first message is the system prompt; the rest alternate user/assistant
+    exactly as they would for Ollama. Only used when `llm_provider` is
+    "anthropic" (a server with no local model); the API key comes from the
+    environment (`ANTHROPIC_API_KEY`) as the SDK resolves it.
+    """
+    try:
+        import anthropic
+    except ImportError as exc:  # optional dependency
+        raise ModelUnavailableError("llm_provider=anthropic needs the `anthropic` package (pip install 'traceback-local[cloud]')") from exc
+    system = messages[0]["content"] if messages and messages[0]["role"] == "system" else None
+    chat = [m for m in messages if m["role"] != "system"]
+    kwargs: dict[str, Any] = {
+        "model": settings.anthropic_model,
+        "max_tokens": settings.anthropic_max_output_tokens,
+        "messages": chat,
+        "output_config": {"effort": settings.anthropic_effort},
+    }
+    if system:
+        kwargs["system"] = system
+    client = anthropic.Anthropic(timeout=settings.anthropic_timeout_s)
+    try:
+        if settings.anthropic_model in _FALLBACK_MODELS:
+            response = client.beta.messages.create(betas=["server-side-fallback-2026-07-01"], fallbacks="default", **kwargs)
+        else:
+            response = client.messages.create(**kwargs)
+    except (anthropic.APIConnectionError, anthropic.RateLimitError, anthropic.InternalServerError) as exc:
+        raise ModelUnavailableError(f"Claude API unavailable: {type(exc).__name__}") from exc
+    except anthropic.APIStatusError as exc:
+        raise InterpretationError(f"Claude API rejected the request ({exc.status_code})") from exc
+    if response.stop_reason == "refusal":
+        raise InterpretationError("Claude declined to interpret this capture")
+    text = "".join(block.text for block in response.content if block.type == "text")
+    if not text:
+        raise InterpretationError("Claude response had no text")
+    return text
+
+
 def _call_ollama(messages: list[dict[str, str]], settings: ProcessorSettings) -> str:
+    """Send a chat to the configured model and return its reply text.
+
+    Despite the historical name this is the single model call for the whole
+    processor: Ollama by default, or the Claude API when `llm_provider` is
+    "anthropic".
+    """
+    if settings.llm_provider == "anthropic":
+        return _call_anthropic(messages, settings)
     body = {
         "model": settings.ollama_model,
         "messages": messages,

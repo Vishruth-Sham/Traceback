@@ -265,9 +265,16 @@ class ProposalAcceptRequest(StrictModel):
     confirm_overdue: bool = False
 
 
+PlanIntent = Literal["note", "task", "project", "update", "log"]
+PlanConfidence = Literal["high", "medium", "low"]
+
+
 class CreateInterpretationItem(StrictModel):
     kind: Literal["create"] = "create"
     item: ItemCreate
+    # Auto-filing audit fields: which intent produced this step and how sure the model was.
+    intent: PlanIntent | None = None
+    confidence: PlanConfidence | None = None
     project_id: uuid.UUID | None = None
     project_expected_version: int | None = Field(default=None, ge=1)
     folder_id: uuid.UUID | None = None
@@ -291,9 +298,35 @@ class AppendInterpretationItem(StrictModel):
     item_id: uuid.UUID
     expected_version: int = Field(ge=1)
     content_md: str = Field(min_length=1, max_length=2_000_000)
+    intent: PlanIntent | None = None
+    confidence: PlanConfidence | None = None
 
 
-InterpretationItem = Annotated[CreateInterpretationItem | AppendInterpretationItem, Field(discriminator="kind")]
+class LogInterpretationItem(StrictModel):
+    """Add an entry to the daily log as part of the same atomic interpretation."""
+
+    kind: Literal["log"]
+    text: str = Field(min_length=1, max_length=2000)
+    at: datetime | None = None
+    intent: PlanIntent | None = None
+    confidence: PlanConfidence | None = None
+
+    @field_validator("text")
+    @classmethod
+    def not_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("log text cannot be blank")
+        return value
+
+
+InterpretationItem = Annotated[
+    CreateInterpretationItem | AppendInterpretationItem | LogInterpretationItem, Field(discriminator="kind")
+]
+
+
+class UndoFilingRequest(StrictModel):
+    expected_version: int = Field(ge=1)
 
 
 class CaptureInterpretationRequest(StrictModel):

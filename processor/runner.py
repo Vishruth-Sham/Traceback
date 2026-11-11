@@ -38,6 +38,7 @@ from processor.errors import (
     TranscriptionError,
 )
 from processor.interpretation import interpret, interpret_note_location
+from processor.planner import build_operations, extract_pieces
 from processor.transcription import transcribe
 from processor.voice import process_voice_capture
 
@@ -434,6 +435,21 @@ def _process_claimed(
             )
             logger.info("capture %s: submitted note proposal", capture_id)
             return {"capture_id": capture_id, "status": "awaiting_review", "item_count": 0}
+        if processor_settings.auto_file and context["processing_profile"] == "general":
+            locations = rest.list_locations()
+            context["locations"] = locations
+            pieces = extract_pieces(text, context, settings=processor_settings)
+            operations = build_operations(pieces, locations, capture)
+            rest.submit_interpretation(
+                capture_id,
+                expected_version=capture["version"],
+                expected_generation=generation,
+                lease_token=lease_token,
+                operations=operations,
+                transcript=transcript,
+            )
+            logger.info("capture %s: filed as %d step(s)", capture_id, len(operations))
+            return {"capture_id": capture_id, "status": "interpreted", "item_count": len(operations)}
         proposal = interpret(text, context, settings=processor_settings)
         items = proposal["items"]
         projects_by_id = {p["id"]: p for p in projects}

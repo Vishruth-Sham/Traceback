@@ -11,6 +11,8 @@ from sqlalchemy.orm import Session, joinedload
 from backend.api import ActionContext, authenticate, item_out
 from backend.capture_models import Capture, CaptureProcessing, CaptureRevision, ItemSource
 from backend.capture_schemas import (
+    LogInterpretationItem,
+    UndoFilingRequest,
     AppendInterpretationItem,
     CaptureClaimRequest,
     CreateInterpretationItem,
@@ -574,8 +576,28 @@ def submit_capture_proposal(
     return result
 
 
+def _add_log_entry(session: Session, operation: LogInterpretationItem, capture: Capture):
+    """Write one daily-log entry inside the interpretation transaction."""
+    from zoneinfo import ZoneInfo
+
+    from backend.log import logical_date
+    from backend.log_models import LogEntry
+
+    settings = get_settings()
+    moment = operation.at or capture.captured_at or utcnow()
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=ZoneInfo(settings.user_timezone))
+    # Log entries only know "ui" or "mcp"; a filed capture is the user's own words.
+    entry = LogEntry(logged_at=moment, log_date=logical_date(moment, settings), text=operation.text, origin="ui")
+    session.add(entry)
+    session.flush()
+    return entry
+
+
 def validate_interpretation_rules(session: Session, capture: Capture, body: CaptureInterpretationRequest) -> None:
     profile = profile_of(capture)
+    if profile != "general" and any(isinstance(operation, LogInterpretationItem) for operation in body.items):
+        raise DomainError("invalid_interpretation", "Only general captures can add daily log entries", 422)
     only_create = len(body.items) == 1 and isinstance(body.items[0], CreateInterpretationItem)
     if profile == "task_quick_add":
         if len(body.items) != 1 or not isinstance(body.items[0], CreateInterpretationItem) or body.items[0].item.item_type != "task":
@@ -621,6 +643,7 @@ def apply_interpretation(
     # This keeps multi-item interpretations atomic without deadlocks.
     create_operations = [operation for operation in body.items if isinstance(operation, CreateInterpretationItem)]
     append_operations = [operation for operation in body.items if isinstance(operation, AppendInterpretationItem)]
+    log_operations = [operation for operation in body.items if isinstance(operation, LogInterpretationItem)]
     append_ids = {operation.item_id for operation in append_operations}
     container_ids = {operation.project_id or operation.folder_id for operation in create_operations if operation.project_id or operation.folder_id}
     lock_ids = sorted(append_ids | container_ids, key=str)
@@ -651,7 +674,14 @@ def apply_interpretation(
             raise DomainError("invalid_input", f"{expected_type}_id must identify a {expected_type}", 422)
     stored_proposal = processing.proposal
     results: list[dict[str, Any]] = []
+    log_entry_ids: list[str] = []
+    plan: list[dict[str, Any]] = []
     for operation in body.items:
+        if isinstance(operation, LogInterpretationItem):
+            entry = _add_log_entry(session, operation, capture)
+            log_entry_ids.append(str(entry.id))
+            plan.append({"kind": "log", "intent": operation.intent, "confidence": operation.confidence, "log_entry_id": str(entry.id)})
+            continue
         if isinstance(operation, AppendInterpretationItem):
             item = append_item(session, operation.item_id, operation.expected_version, operation.content_md, action)
         else:
@@ -671,6 +701,7 @@ def apply_interpretation(
         session.add(ItemSource(item_id=item.id, capture_id=capture.id, action_id=action.id, link_kind="interpreted"))
         session.flush()
         results.append(ItemOut.model_validate(item_out(session, item, action.id)).model_dump(mode="json"))
+        plan.append({"kind": operation.kind, "intent": operation.intent, "confidence": operation.confidence, "item_id": str(item.id)})
     processing.state = "resolved"
     processing.proposal = None
     processing.transcript = body.transcript if body.transcript is not None else processing.transcript
@@ -682,6 +713,10 @@ def apply_interpretation(
         processing.generation += 1
     capture.version += 1
     changes: dict[str, Any] = {"mode": body.mode, "item_ids": [str(result["id"]) for result in results], "generation": processing.generation}
+    if log_entry_ids:
+        changes["log_entry_ids"] = log_entry_ids
+    if any(step["intent"] or step["confidence"] for step in plan):
+        changes["plan"] = plan
     if is_voice(capture) and create_operations:
         operation = create_operations[0]
         destination = None
@@ -711,6 +746,7 @@ def apply_interpretation(
     result = {
         "capture": json_capture(session, capture, action.id),
         "items": results,
+        "log_entry_ids": log_entry_ids,
         "action_id": str(action.id),
     }
     finish_action(action, result)
@@ -728,6 +764,83 @@ def interpret_capture(capture_id: uuid.UUID, body: CaptureInterpretationRequest,
     require_capture_version(capture, body.expected_version)
     validate_interpretation_rules(session, capture, body)
     result = apply_interpretation(session, capture, action, body)
+    session.commit()
+    return result
+
+
+@router.post("/captures/{capture_id}/undo-filing")
+def undo_capture_filing(capture_id: uuid.UUID, body: UndoFilingRequest, session: SessionDep, context: ActionContext):
+    """Reverse the whole plan that filed this capture, in one step.
+
+    Items the plan created are archived (so nothing is lost), items it appended
+    to or placed things into go back to how they were, and its daily-log
+    entries are archived. The capture returns to `failed` with code
+    `filing_undone`, so it can be filed by hand or retried. Refused when any
+    touched item was edited after the filing.
+    """
+    from backend.log_models import LogEntry
+    from backend.models import ItemRevision
+    from backend.services import restore_snapshot
+
+    payload = {"capture_id": str(capture_id), **body.model_dump(mode="json")}
+    action, replay = begin_action(session, "undo_capture_filing", payload, context[0], client_label=context[1])
+    if replay:
+        return replay
+    capture = get_capture(session, capture_id, lock=True)
+    require_capture_version(capture, body.expected_version)
+    processing = capture.processing
+    if capture.archived_at is not None or processing.state != "resolved":
+        raise processing_conflict("Only filed (resolved) captures can have their filing undone", processing, capture)
+    filed = session.scalar(
+        select(CaptureRevision)
+        .where(CaptureRevision.capture_id == capture.id, CaptureRevision.change_type == "interpreted")
+        .order_by(CaptureRevision.created_at.desc(), CaptureRevision.id.desc())
+        .limit(1)
+    )
+    if filed is None or filed.action_id is None:
+        raise DomainError("undo_unavailable", "This capture has no filing to undo", 409)
+    original = session.scalar(select(Action).where(Action.id == filed.action_id).with_for_update())
+    if original is None or original.undone_by_action_id is not None:
+        raise DomainError("undo_unavailable", "This filing has already been undone", 409)
+    revisions = session.scalars(
+        select(ItemRevision).where(ItemRevision.action_id == original.id).order_by(ItemRevision.item_id)
+    ).all()
+    now = utcnow()
+    touched: list[str] = []
+    for revision in revisions:
+        item = get_item(session, revision.item_id, lock=True)
+        if item.version != revision.resulting_version:
+            raise DomainError(
+                "version_conflict",
+                "The filing cannot be undone after a later edit",
+                409,
+                {"id": str(item.id), "action_resulting_version": revision.resulting_version, "actual_version": item.version},
+            )
+        before = item_snapshot(session, item)
+        if revision.before_snapshot is None:
+            item.archived_at = now
+        else:
+            restore_snapshot(session, item, revision.before_snapshot)
+        bump(item)
+        session.flush()
+        record_revision(session, action, item, before)
+        touched.append(str(item.id))
+    log_ids = [uuid.UUID(value) for value in (filed.changes or {}).get("log_entry_ids", [])]
+    if log_ids:
+        for entry in session.scalars(select(LogEntry).where(LogEntry.id.in_(log_ids), LogEntry.archived_at.is_(None))):
+            entry.archived_at = now
+    original.undone_by_action_id = action.id
+    processing.state = "failed"
+    processing.error_code = "filing_undone"
+    processing.error_message = "The automatic filing was undone. File it by hand or retry."
+    processing.finished_at = now
+    capture.version += 1
+    add_capture_revision(
+        session, capture, action, "filing_undone", {"undone_action_id": str(original.id), "item_ids": touched, "log_entry_ids": [str(v) for v in log_ids]}
+    )
+    session.flush()
+    result = {"capture": json_capture(session, capture, action.id), "item_ids": touched, "action_id": str(action.id)}
+    finish_action(action, result)
     session.commit()
     return result
 

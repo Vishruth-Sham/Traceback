@@ -44,9 +44,25 @@ the current version. Distinguish a stored fact from an agent inference;
 cite the relevant item or capture by title and ID when that helps the user
 find it again.
 
+## Add something (default)
+
+When the user says "add this to Traceback", "remember that…", or dictates a
+thought without naming an exact place, call `create_capture` with
+`source_type="typed"` and the user's words as `raw_text` (default "general"
+profile). Traceback splits it into pieces, decides what each one is (note,
+task, new project, update to an existing project, or daily-log entry), files
+each in the best place, and records the whole thing as one plan.
+
+Then call `get_capture` and report what was filed and where. If the capture
+is still `pending`, say the processor has not run yet. If the user says it
+went to the wrong place, `undo_capture_filing` reverses the whole plan in one
+step; then file it by hand with `apply_capture_interpretation`, or use
+`move_item` for a single item.
+
 ## Save a ready item
 
-When the user asks to save a note, task, project, or folder:
+When the user names the exact type and place for a note, task, project, or
+folder:
 
 1. Preserve the user's meaning and important wording. Do not invent dates,
    completion state, or facts absent from the request.
@@ -118,15 +134,8 @@ the token, or base64 the file.
 
 ## Preserve raw input when requested
 
-Claude Code and Codex already receive the user's text. For an ordinary
-"save this" request, create or update the item directly rather than waiting
-for the local model to interpret it again.
-
-Use `create_capture` when the user specifically wants an original input
-retained for later interpretation, rather than an already defined item saved
-now.
-`create_capture` does not itself classify or finish processing; the separate
-local processor must be running. Check state with `get_capture`. Explain
+`create_capture` keeps the original input and returns before it is filed;
+the separate processor must be running to file it. Check state with `get_capture`. Explain
 `pending`, `awaiting_review`, and `failed` accurately.
 
 For a reviewed note placement, inspect the stored suggestion with

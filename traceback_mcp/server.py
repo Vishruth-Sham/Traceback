@@ -64,6 +64,7 @@ _TOOLS = [
     (captures.restore_capture, "Restore capture", MUTATE),
     (captures.delete_capture_permanently, "Permanently delete capture", DESTROY),
     (captures.retry_capture, "Retry capture processing", MUTATE),
+    (captures.undo_capture_filing, "Undo capture filing", MUTATE),
     (captures.apply_capture_interpretation, "Apply capture interpretation", MUTATE),
     # Daily log (entries are applied immediately; no review step)
     (log.log_entry, "Log an entry", MUTATE),

@@ -132,6 +132,13 @@ def item_snapshot(session: Session, item: Item) -> dict[str, Any]:
 
 def record_revision(session: Session, action: Action, item: Item, before: dict[str, Any] | None) -> None:
     session.flush()
+    existing = session.scalar(select(ItemRevision).where(ItemRevision.action_id == action.id, ItemRevision.item_id == item.id))
+    if existing is not None:
+        # One action touched this item more than once (e.g. an append and a create placed
+        # into the same project): keep the first "before" and move the "after" forward.
+        existing.resulting_version = item.version
+        existing.after_snapshot = item_snapshot(session, item)
+        return
     session.add(
         ItemRevision(
             action_id=action.id,
