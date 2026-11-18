@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { groupOpenTasks, formatDeadline } from "../taskGrouping";
+import {
+  formatDayLabel,
+  formatDeadline,
+  groupOpenTasks,
+  groupTasksForDay,
+  isDayString,
+  shiftDay,
+  toDayString,
+} from "../taskGrouping";
 import { Item } from "../types";
 
 function makeItem(overrides: Partial<Item>): Item {
@@ -82,5 +90,53 @@ describe("formatDeadline", () => {
     expect(formatDeadline({ due_date: "2026-03-05", due_time: "12:00:00", due_timezone: "UTC" })).toBe(
       "Mar 5, 12:00 PM",
     );
+  });
+});
+
+describe("groupTasksForDay", () => {
+  const today = "2026-11-18";
+  const open = [
+    makeItem({ id: "old", due_date: "2026-11-10", overdue: true }),
+    makeItem({ id: "today-1", due_date: "2026-11-18", overdue: false }),
+    makeItem({ id: "today-2", due_date: "2026-11-18", due_time: "09:00:00", overdue: true }),
+    makeItem({ id: "tomorrow", due_date: "2026-11-19", overdue: false }),
+    makeItem({ id: "undated", due_date: null }),
+  ];
+  const completed = [
+    makeItem({ id: "done-today", status: "completed", due_date: "2026-11-18" }),
+    makeItem({ id: "done-other", status: "completed", due_date: "2026-11-01" }),
+  ];
+
+  it("shows tasks due that day, overdue carry-over, and tasks done for that day", () => {
+    const groups = groupTasksForDay(open, completed, today, today);
+    expect(groups.overdue.map((i) => i.id)).toEqual(["old"]);
+    expect(groups.due.map((i) => i.id)).toEqual(["today-1", "today-2"]);
+    expect(groups.done.map((i) => i.id)).toEqual(["done-today"]);
+  });
+
+  it("does not carry overdue tasks onto days other than today", () => {
+    const groups = groupTasksForDay(open, completed, "2026-11-19", today);
+    expect(groups.overdue).toHaveLength(0);
+    expect(groups.due.map((i) => i.id)).toEqual(["tomorrow"]);
+    expect(groups.done).toHaveLength(0);
+  });
+});
+
+describe("day helpers", () => {
+  it("shifts across month and year boundaries", () => {
+    expect(shiftDay("2026-11-30", 1)).toBe("2026-12-01");
+    expect(shiftDay("2027-01-01", -1)).toBe("2026-12-31");
+  });
+
+  it("formats relative day labels", () => {
+    expect(formatDayLabel("2026-11-18", "2026-11-18")).toBe("Today");
+    expect(formatDayLabel("2026-11-19", "2026-11-18")).toBe("Tomorrow");
+    expect(formatDayLabel("2026-11-17", "2026-11-18")).toBe("Yesterday");
+  });
+
+  it("formats a local date as YYYY-MM-DD and validates day strings", () => {
+    expect(toDayString(new Date(2026, 0, 5))).toBe("2026-01-05");
+    expect(isDayString("2026-01-05")).toBe(true);
+    expect(isDayString("tomorrow")).toBe(false);
   });
 });

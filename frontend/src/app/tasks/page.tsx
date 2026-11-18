@@ -3,7 +3,14 @@
 import { Suspense, useState } from "react";
 import useSWR from "swr";
 import { completeTask, listTasks, reopenTask } from "@/lib/traceback";
-import { groupOpenTasks } from "@/lib/taskGrouping";
+import {
+  formatDayLabel,
+  groupOpenTasks,
+  groupTasksForDay,
+  isDayString,
+  shiftDay,
+  toDayString,
+} from "@/lib/taskGrouping";
 import { Item } from "@/lib/types";
 import { TaskRow } from "@/components/TaskRow";
 import { TaskQuickAdd } from "@/components/TaskQuickAdd";
@@ -15,19 +22,33 @@ import { PageHeader } from "@/components/PageHeader";
 import { Segmented } from "@/components/Segmented";
 import { useUrlParameter } from "@/lib/useUrlParameter";
 
-type Filter = "open" | "completed";
+type Filter = "open" | "daily" | "completed";
 
 function TasksPageInner() {
   const [storedFilter, setStoredFilter] = useUrlParameter("status", "open");
-  const filter: Filter = storedFilter === "completed" ? "completed" : "open";
+  const filter: Filter = storedFilter === "completed" || storedFilter === "daily" ? storedFilter : "open";
+  const today = toDayString(new Date());
+  const [storedDay, setStoredDay] = useUrlParameter("day", "");
+  const day = isDayString(storedDay) ? storedDay : today;
+  const setDay = (next: string) => setStoredDay(next === today ? "" : next);
   const { openId, open, close } = useDetailPanel();
   const [togglingId, setTogglingId] = useState<string | null>(null);
   const toast = useToast();
 
-  const { data, error, isLoading, mutate } = useSWR(
-    `tasks:${filter}`,
-    () => listTasks({ status: filter, limit: 100 }),
+  // The daily view reads both lists (open for what's due, completed for what's
+  // done that day) and shares the cache keys with the other two views.
+  const wantsOpen = filter !== "completed";
+  const wantsCompleted = filter !== "open";
+  const openTasks = useSWR(wantsOpen ? "tasks:open" : null, () => listTasks({ status: "open", limit: 100 }));
+  const completedTasks = useSWR(wantsCompleted ? "tasks:completed" : null, () =>
+    listTasks({ status: "completed", limit: 100 }),
   );
+  const isLoading = (wantsOpen && openTasks.isLoading) || (wantsCompleted && completedTasks.isLoading);
+  const error = (wantsOpen && openTasks.error) || (wantsCompleted && completedTasks.error);
+  const mutate = () => {
+    if (wantsOpen) openTasks.mutate();
+    if (wantsCompleted) completedTasks.mutate();
+  };
 
   async function handleToggle(item: Item) {
     setTogglingId(item.id);
@@ -55,8 +76,24 @@ function TasksPageInner() {
     }
   }
 
-  const items = data?.items ?? [];
+  const openItems = openTasks.data?.items ?? [];
+  const completedItems = completedTasks.data?.items ?? [];
+  const items = filter === "completed" ? completedItems : openItems;
   const groups = filter === "open" ? groupOpenTasks(items) : null;
+  const dayGroups = filter === "daily" ? groupTasksForDay(openItems, completedItems, day, today) : null;
+  const dayIsEmpty =
+    dayGroups !== null && dayGroups.overdue.length + dayGroups.due.length + dayGroups.done.length === 0;
+
+  const renderRows = (rows: Item[]) =>
+    rows.map((item) => (
+      <TaskRow
+        key={item.id}
+        item={item}
+        onOpen={() => open(item.id)}
+        onToggle={() => handleToggle(item)}
+        toggling={togglingId === item.id}
+      />
+    ));
 
   return (
     <div className="mx-auto max-w-[760px] px-10 py-10 pb-32">
@@ -71,6 +108,7 @@ function TasksPageInner() {
         onChange={setStoredFilter}
         options={[
           { value: "open", label: "open" },
+          { value: "daily", label: "daily" },
           { value: "completed", label: "completed" },
         ]}
       />
@@ -79,7 +117,9 @@ function TasksPageInner() {
       {isLoading && <LoadingState label="Loading tasks…" />}
       {error && <ErrorState message="Could not load tasks." onRetry={() => mutate()} />}
 
-      {!isLoading && !error && items.length === 0 && (
+      {filter === "daily" && <DayNav day={day} today={today} onChange={setDay} />}
+
+      {!isLoading && !error && filter !== "daily" && items.length === 0 && (
         <EmptyState
           title={filter === "open" ? "No open tasks." : "No completed tasks yet."}
           hint={filter === "open" ? "Add one above to get started." : undefined}
@@ -90,61 +130,63 @@ function TasksPageInner() {
         <>
           {groups.overdue.length > 0 && (
             <Section title="Overdue">
-              {groups.overdue.map((item) => (
-                <TaskRow
-                  key={item.id}
-                  item={item}
-                  onOpen={() => open(item.id)}
-                  onToggle={() => handleToggle(item)}
-                  toggling={togglingId === item.id}
-                />
-              ))}
+              {renderRows(groups.overdue)}
             </Section>
           )}
           {groups.upcoming.length > 0 && (
             <Section title="Upcoming">
-              {groups.upcoming.map((item) => (
-                <TaskRow
-                  key={item.id}
-                  item={item}
-                  onOpen={() => open(item.id)}
-                  onToggle={() => handleToggle(item)}
-                  toggling={togglingId === item.id}
-                />
-              ))}
+              {renderRows(groups.upcoming)}
             </Section>
           )}
           {groups.undated.length > 0 && (
             <Section title="No date">
-              {groups.undated.map((item) => (
-                <TaskRow
-                  key={item.id}
-                  item={item}
-                  onOpen={() => open(item.id)}
-                  onToggle={() => handleToggle(item)}
-                  toggling={togglingId === item.id}
-                />
-              ))}
+              {renderRows(groups.undated)}
             </Section>
           )}
         </>
       )}
 
-      {!isLoading && !error && !groups && (
-        <div>
-          {items.map((item) => (
-            <TaskRow
-              key={item.id}
-              item={item}
-              onOpen={() => open(item.id)}
-              onToggle={() => handleToggle(item)}
-              toggling={togglingId === item.id}
+      {!isLoading && !error && dayGroups && (
+        <>
+          {dayIsEmpty && (
+            <EmptyState
+              title={day === today ? "Nothing due today." : `Nothing due ${formatDayLabel(day, today).toLowerCase()}.`}
+              hint="Tasks show up here on the day they're due."
             />
-          ))}
+          )}
+          {dayGroups.overdue.length > 0 && <Section title="Overdue">{renderRows(dayGroups.overdue)}</Section>}
+          {dayGroups.due.length > 0 && <Section title="Due">{renderRows(dayGroups.due)}</Section>}
+          {dayGroups.done.length > 0 && <Section title="Done">{renderRows(dayGroups.done)}</Section>}
+        </>
+      )}
+
+      {!isLoading && !error && filter === "completed" && (
+        <div>
+          {renderRows(items)}
         </div>
       )}
 
       {openId && <ItemDetailPanel itemId={openId} onClose={close} />}
+    </div>
+  );
+}
+
+function DayNav({ day, today, onChange }: { day: string; today: string; onChange: (day: string) => void }) {
+  const button = "rounded border border-hairline px-2.5 py-1 text-ink-muted hover:text-ink";
+  return (
+    <div className="mb-2 flex items-center gap-2 text-[12.5px]">
+      <button className={button} onClick={() => onChange(shiftDay(day, -1))} aria-label="Previous day">
+        ‹
+      </button>
+      <div className="min-w-[120px] text-center font-medium text-ink">{formatDayLabel(day, today)}</div>
+      <button className={button} onClick={() => onChange(shiftDay(day, 1))} aria-label="Next day">
+        ›
+      </button>
+      {day !== today && (
+        <button className={button} onClick={() => onChange(today)}>
+          today
+        </button>
+      )}
     </div>
   );
 }
