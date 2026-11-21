@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import useSWR, { useSWRConfig } from "swr";
 import { X, Archive as ArchiveIcon, ArchiveRestore, Trash2, History, Loader2 } from "lucide-react";
 import {
@@ -22,6 +22,41 @@ import { HistoryList } from "./HistoryList";
 function useItem(id: string | null) {
   return useSWR<Item>(id ? `item:${id}` : null, id ? () => getItem(id) : null);
 }
+// Notes grow with their content from a comfortable minimum up to 60vh, after
+// which they scroll. The user can still drag the handle to resize vertically.
+function NotesTextarea({
+  value,
+  onChange,
+  onBlur,
+  className,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onBlur: () => void;
+  className: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const max = window.innerHeight * 0.6;
+    el.style.height = `${Math.min(el.scrollHeight + 2, max)}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      onBlur={onBlur}
+      rows={12}
+      aria-label="Notes"
+      placeholder="Add notes…"
+      className={`${className} min-h-[16rem]`}
+    />
+  );
+}
+
 export function ItemDetailPanel({ itemId, onClose }: { itemId: string; onClose: () => void }) {
   const { data: item, error, isLoading, mutate } = useItem(itemId);
 
@@ -242,14 +277,11 @@ function ItemDetailBody({
 
       <div className="flex flex-col gap-1.5">
         <label className="text-[11px] uppercase tracking-wide text-ink-faint">Notes</label>
-        <textarea
+        <NotesTextarea
           value={content}
-          onChange={(e) => setContent(e.target.value)}
+          onChange={setContent}
           onBlur={() => content !== item.content_md && saveField({ content_md: content })}
-          rows={6}
-          aria-label="Notes"
-          placeholder="Add notes…"
-          className="w-full resize-none rounded border border-hairline bg-paper px-3 py-2 text-[13.5px] text-ink placeholder:text-ink-faint focus:border-accent-navy focus:outline-none"
+          className="w-full resize-y rounded border border-hairline bg-paper px-3 py-2 text-[13.5px] text-ink placeholder:text-ink-faint focus:border-accent-navy focus:outline-none"
         />
         {saving && <span className="text-[11px] text-ink-faint">saving…</span>}
       </div>
